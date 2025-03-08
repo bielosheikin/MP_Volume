@@ -2,7 +2,6 @@ from math import exp, log
 
 from .trackable import Trackable
 from .flux_calculation_parameters import FluxCalculationParameters
-# from .ion_species2 import IonSpecies
 
 from typing import TYPE_CHECKING
 
