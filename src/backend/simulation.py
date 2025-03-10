@@ -1,7 +1,7 @@
 from .constants import IDEAL_GAS_CONSTANT, FARADAY_CONSTANT, VOLUME_TO_AREA_CONSTANT
 from .trackable import Trackable
-from .exterior import ExteriorConfig, Exterior
-from .vesicle import VesicleConfig, Vesicle
+from .exterior import Exterior
+from .vesicle import Vesicle
 from .ion_species import IonSpecies
 from .ion_channels import IonChannel
 from .flux_calculation_parameters import FluxCalculationParameters
@@ -10,73 +10,63 @@ from .default_ion_species import default_ion_species
 from .ion_and_channels_link import IonChannelsLink
 from .histories_storage import HistoriesStorage
 from math import log10
+from ..nestconf import Configurable
+from dataclasses import field
 
-class SimulationConfig:
-    DEFAULT_TIME_STEP = 0.001
-    DEFAULT_TOTAL_TIME = 100.0
-    DEFAULT_TEMPERATURE = 2578.5871 / IDEAL_GAS_CONSTANT
-    DEFAULT_INIT_BUFFER_CAPACITY = 5e-4
 
-    def __init__(self,
-                 *,
-                 time_step: float = None,
-                 total_time: float = None,
-                 temperature: float = None,
-                 init_buffer_capacity: float = None):
-        
-        self.time_step = time_step if time_step is not None else self.DEFAULT_TIME_STEP
-        self.total_time = total_time if total_time is not None else self.DEFAULT_TOTAL_TIME
-        self.temperature = temperature if temperature is not None else self.DEFAULT_TEMPERATURE
-        self.init_buffer_capacity = init_buffer_capacity if init_buffer_capacity is not None else self.DEFAULT_INIT_BUFFER_CAPACITY
-        
-
-class Simulation(Trackable):
-    TRACKABLE_FIELDS = ('buffer_capacity','time')
+class Simulation(Configurable, Trackable):
+    # Configuration fields defined directly in the class
+    time_step: float = 0.001
+    total_time: float = 100.0
+    temperature: float = 2578.5871 / IDEAL_GAS_CONSTANT
+    init_buffer_capacity: float = 5e-4
+    
+    # Non-config fields don't need type annotations
+    TRACKABLE_FIELDS = ('buffer_capacity', 'time')
 
     def __init__(self,
                  *,
-                 config: SimulationConfig = None,
                  channels: dict = None,
                  species: dict = None,
                  ion_channel_links: IonChannelsLink = None,
-                 vesicle_config: VesicleConfig = None,
-                 exterior_config: ExteriorConfig = None,
+                 vesicle_params: dict = None,
+                 exterior_params: dict = None,
                  display_name: str = 'simulation',
                  **kwargs):
-        super(Simulation, self).__init__(display_name=display_name, **kwargs)
+        Configurable.__init__(self, **kwargs)
+        Trackable.__init__(self, display_name=display_name)
 
-        # Simulation configuration
-        self.config = config if config is not None else SimulationConfig()
-        self.iter_num = int(self.config.total_time / self.config.time_step)
+        # Initialize simulation parameters
+        self.iter_num = int(self.total_time / self.time_step)
         self.time = 0.0
 
         # Default configs
         self.channels = channels if channels is not None else default_channels
         self.species = species if species is not None else default_ion_species
         self.ion_channel_links = ion_channel_links if ion_channel_links is not None else IonChannelsLink()
-        self.vesicle_config = vesicle_config if vesicle_config is not None else VesicleConfig()
-        self.exterior_config = exterior_config if exterior_config is not None else ExteriorConfig()
+        self.vesicle_params = vesicle_params if vesicle_params is not None else {}
+        self.exterior_params = exterior_params if exterior_params is not None else {}
 
         # External components and tracking
         self.exterior = None
         self.vesicle = None
         self.all_species = []  
-        self.buffer_capacity = self.config.init_buffer_capacity
+        self.buffer_capacity = self.init_buffer_capacity
         self.histories = HistoriesStorage()
-        self.nernst_constant = self.config.DEFAULT_TEMPERATURE * IDEAL_GAS_CONSTANT / FARADAY_CONSTANT
+        self.nernst_constant = self.temperature * IDEAL_GAS_CONSTANT / FARADAY_CONSTANT
         self.unaccounted_ion_amounts = None
         self.histories.register_object(self)
 
         # Initialize simulation components
         self._initialize_vesicle_and_exterior()
-        self._initialize_species_and_channels() 
+        self._initialize_species_and_channels()
 
     def _initialize_vesicle_and_exterior(self):
         """
-        Initialize vesicle and exterior objects using their respective configurations.
+        Initialize vesicle and exterior objects using their respective parameters.
         """
-        self.vesicle = Vesicle(config=self.vesicle_config, display_name="Vesicle")
-        self.exterior = Exterior(config=self.exterior_config, display_name="Exterior")
+        self.vesicle = Vesicle(display_name="Vesicle", **self.vesicle_params)
+        self.exterior = Exterior(display_name="Exterior", **self.exterior_params)
         
         # Register in histories for tracking
         self.histories.register_object(self.vesicle)
@@ -131,7 +121,7 @@ class Simulation(Trackable):
         hydrogen_species = next((s for s in self.all_species if s.display_name == 'h'), None)
         if hydrogen_species:
             flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * self.buffer_capacity
-            flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * self.config.init_buffer_capacity
+            flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * self.init_buffer_capacity
         else:
             # Check if any channel requires free hydrogen
             if any(channel.config.use_free_hydrogen for channel in [ch for sp in self.all_species for ch in sp.channels]):
@@ -168,7 +158,7 @@ class Simulation(Trackable):
         self.vesicle.voltage = self.vesicle.charge / self.vesicle.capacitance
 
     def update_buffer(self):
-        self.buffer_capacity = self.config.init_buffer_capacity * self.vesicle.volume / self.vesicle.init_volume
+        self.buffer_capacity = self.init_buffer_capacity * self.vesicle.volume / self.vesicle.init_volume
 
     def update_pH(self):
         """Update the pH based on the free hydrogen concentration in the vesicle."""
@@ -190,7 +180,7 @@ class Simulation(Trackable):
 
     def update_ion_amounts(self, fluxes):
         for ion, flux in zip(self.all_species, fluxes):
-            ion.vesicle_amount += flux * self.config.time_step
+            ion.vesicle_amount += flux * self.time_step
             
             if ion.vesicle_amount < 0:
                 ion.vesicle_amount = 0
@@ -224,7 +214,7 @@ class Simulation(Trackable):
         
         self.update_ion_amounts(fluxes)
 
-        self.time += self.config.time_step
+        self.time += self.time_step
 
     def run(self):            
         

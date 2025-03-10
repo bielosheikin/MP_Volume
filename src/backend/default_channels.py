@@ -1,7 +1,7 @@
-from .ion_channels import IonChannelConfig
+from .ion_channels import IonChannel
 
 default_channels = {
-    "asor": IonChannelConfig(
+    "asor": IonChannel(
         conductance=8e-5,
         channel_type='wt',
         voltage_dep='yes',
@@ -12,9 +12,9 @@ default_channels = {
         flux_multiplier=1,
         allowed_primary_ion='cl',
         primary_exponent=1,
-        display_name='ASOR_Config'
+        display_name='ASOR'
     ),
-    "clc": IonChannelConfig(
+    "clc": IonChannel(
         conductance=1e-7,
         channel_type='clc',
         voltage_dep='yes',
@@ -28,9 +28,9 @@ default_channels = {
         primary_exponent=2,
         secondary_exponent=1,
         use_free_hydrogen=True,
-        display_name='CLC_Config'
+        display_name='CLC'
     ),
-    "tpc": IonChannelConfig(
+    "tpc": IonChannel(
         conductance=2e-6,
         dependence_type=None,
         voltage_multiplier=-1,
@@ -39,9 +39,9 @@ default_channels = {
         flux_multiplier=1,
         allowed_primary_ion='na',
         primary_exponent=1,
-        display_name='TPC_Config'
+        display_name='TPC'
     ),
-    "nhe": IonChannelConfig(
+    "nhe": IonChannel(
         conductance=0.0,
         dependence_type=None,
         voltage_multiplier=0,
@@ -54,9 +54,9 @@ default_channels = {
         primary_exponent=1,
         secondary_exponent=1,
         use_free_hydrogen=True,
-        display_name='NHE_Config'
+        display_name='NHE'
     ),
-    "vatpase": IonChannelConfig(
+    "vatpase": IonChannel(
         conductance=8e-9,
         dependence_type='time',
         voltage_multiplier=1,
@@ -65,9 +65,9 @@ default_channels = {
         flux_multiplier=-1,
         allowed_primary_ion='h',
         primary_exponent=1,
-        display_name='VATPase_Config'
+        display_name='VATPase'
     ),
-    "clc_h": IonChannelConfig(
+    "clc_h": IonChannel(
         conductance=1e-7,
         channel_type='clc',
         voltage_dep='yes',
@@ -81,9 +81,9 @@ default_channels = {
         primary_exponent=2,
         secondary_exponent=1,
         use_free_hydrogen=True,
-        display_name='CLC_Config_H'
+        display_name='CLC_H'
     ),
-    "nhe_h": IonChannelConfig(
+    "nhe_h": IonChannel(
         conductance=0.0,
         dependence_type=None,
         voltage_multiplier=0,
@@ -96,9 +96,9 @@ default_channels = {
         primary_exponent=1,
         secondary_exponent=1,
         use_free_hydrogen=True,
-        display_name='NHE_Config_H'
+        display_name='NHE_H'
     ),
-    "hleak": IonChannelConfig(
+    "hleak": IonChannel(
         conductance=1.6e-8,
         dependence_type=None,
         voltage_multiplier=-1,
@@ -108,9 +108,9 @@ default_channels = {
         allowed_primary_ion='h',
         primary_exponent=1,
         use_free_hydrogen=True,
-        display_name='HLeak_Config'
+        display_name='HLeak'
     ),
-    "k_channel": IonChannelConfig(
+    "k_channel": IonChannel(
         conductance=0.0,
         dependence_type=None,
         voltage_multiplier=-1,
@@ -119,6 +119,6 @@ default_channels = {
         flux_multiplier=1,
         allowed_primary_ion='k',
         primary_exponent=1,
-        display_name='K_Config'
+        display_name='K'
     )
 }
