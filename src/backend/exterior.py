@@ -13,6 +13,6 @@ class Exterior(Configurable, Trackable):
                  *,
                  display_name: str = None,
                  **kwargs):
-        Configurable.__init__(self, **kwargs)
-        Trackable.__init__(self, display_name=display_name)
+        # Initialize both parent classes with their required parameters
+        super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
         self.pH = self.pH  # Initialize from config value

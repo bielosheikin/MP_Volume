@@ -33,8 +33,12 @@ class ConfigurableMeta(type):
 
             for field_name, _, _ in config_fields:
                 def make_property(field_name):
-                    # Define a property dynamically
-                    return property(lambda self: getattr(self.config, field_name))
+                    # Define a property dynamically with both getter and setter
+                    def getter(self):
+                        return getattr(self.config, field_name)
+                    def setter(self, value):
+                        setattr(self.config, field_name, value)
+                    return property(getter, setter)
                 setattr(configurable_cls, field_name, make_property(field_name))
 
         return configurable_cls
