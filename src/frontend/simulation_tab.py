@@ -27,6 +27,7 @@ class SimulationParamsTab(QWidget):
         self.setLayout(layout)
 
     def get_data(self):
+        # These parameters are now direct configuration fields in the Simulation class
         return {
             "time_step": self.time_step.value(),
             "total_time": self.total_time.value(),

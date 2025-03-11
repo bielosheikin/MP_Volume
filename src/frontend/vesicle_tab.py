@@ -33,12 +33,12 @@ class VesicleTab(QWidget):
 
     def get_data(self):
         return {
-            "vesicle_config": {
+            "vesicle_params": {
                 "init_radius": self.init_radius.value(),
                 "init_voltage": self.init_voltage.value(),
                 "init_pH": self.init_pH.value(),
             },
-            "exterior_config": {
+            "exterior_params": {
                 "pH": self.default_pH.value(),
             }
         }
