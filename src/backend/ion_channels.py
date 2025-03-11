@@ -32,9 +32,13 @@ class IonChannel(Configurable, Trackable):
                  *,
                  display_name: str = None,
                  **kwargs):
-        # Dynamically define TRACKABLE_FIELDS based on configuration
+        # First initialize parent classes so we have access to config
+        super().__init__(**kwargs)
+
+        # Initialize tracking fields
         self.dynamic_trackable_fields = ['flux', 'nernst_potential']
 
+        # Now we can safely access config values
         if self.dependence_type in ['pH', 'voltage_and_pH']:
             self.dynamic_trackable_fields.append('pH_dependence')
 
@@ -44,11 +48,8 @@ class IonChannel(Configurable, Trackable):
         if self.dependence_type == 'time':
             self.dynamic_trackable_fields.append('time_dependence')
 
-        # Set TRACKABLE_FIELDS before calling the superclass constructor
+        # Set TRACKABLE_FIELDS
         self.TRACKABLE_FIELDS = tuple(self.dynamic_trackable_fields)
-
-        Configurable.__init__(self, **kwargs)
-        Trackable.__init__(self, display_name=display_name)
 
         # Initialize primary and secondary ion species as None
         self.primary_ion_species = None

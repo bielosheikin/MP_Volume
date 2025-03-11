@@ -1,7 +1,5 @@
 import sys
-
 import os
-
 
 # Add the 'src' directory to the Python path
 # sys.path.append(r"C:\Away\FMP\MP_volume_GUI\MP_Volume_V5\src")
@@ -15,10 +13,10 @@ from .channels_tab import ChannelsTab
 from .simulation_tab import SimulationParamsTab
 from .results_tab import ResultsTab
 
-from ..backend.simulation import Simulation, SimulationConfig
+from ..backend.simulation import Simulation
 from ..backend.simulation_worker import SimulationWorker
 from ..backend.ion_species import IonSpecies
-from ..backend.ion_channels import IonChannel, IonChannelConfig
+from ..backend.ion_channels import IonChannel
 from ..backend.default_channels import default_channels
 from ..backend.default_ion_species import default_ion_species
 from ..backend.ion_and_channels_link import IonChannelsLink
@@ -73,22 +71,22 @@ class SimulationGUI(QMainWindow):
                 for name, data in ion_species_data_plain.items()
             }
 
-            # Convert plain channel data to IonChannel objects
+            # Convert plain channel data to IonChannel objects with direct parameters
             channels_data = {
                 name: IonChannel(
-                    config=IonChannelConfig(**data),
-                    display_name=name
+                    display_name=name,
+                    **data  # Pass channel parameters directly
                 )
                 for name, data in channels_data_plain.items()
             }
 
-            # Create the simulation
-            sim_config = SimulationConfig(**simulation_params)
+            # Create the simulation with all parameters
             simulation = Simulation(
-                config=sim_config,
+                **simulation_params,  # time_step and total_time
                 channels=channels_data,
                 species=ion_species_data,
-                ion_channel_links=ion_channel_links
+                ion_channel_links=ion_channel_links,
+                **vesicle_data  # vesicle_params and exterior_params
             )
             
             # Use SimulationManager

@@ -31,9 +31,9 @@ class Simulation(Configurable, Trackable):
     TRACKABLE_FIELDS = ('buffer_capacity', 'time')
 
     def __init__(self, **kwargs):
-        Configurable.__init__(self, **kwargs)
-        Trackable.__init__(self, display_name=self.display_name)
-
+        # Initialize both parent classes with their required parameters
+        super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
+        
         # Initialize simulation parameters
         self.iter_num = int(self.total_time / self.time_step)
         self.time = 0.0

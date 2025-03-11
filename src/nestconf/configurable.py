@@ -1,5 +1,5 @@
 from dataclasses import make_dataclass, field, Field
-
+from abc import ABCMeta
 from .config import Config
 
 
@@ -20,7 +20,7 @@ class ConfigurableMeta(type):
                                         field_type,
                                         field(default=dct[field_name])))
                     
-            # # Define the dynamically created Config class
+            # Define the dynamically created Config class
             config_name = f"{name}Config"
             config_class = make_dataclass(
                 config_name,  # Name of the dynamically created class
@@ -38,9 +38,14 @@ class ConfigurableMeta(type):
                 setattr(configurable_cls, field_name, make_property(field_name))
 
         return configurable_cls
-    
 
-class Configurable(metaclass=ConfigurableMeta):
+
+class CombinedMeta(ConfigurableMeta, ABCMeta):
+    """A metaclass that combines ConfigurableMeta and ABCMeta."""
+    pass
+
+
+class Configurable(metaclass=CombinedMeta):
     def __init__(self, 
                  *,
                  config: Config = None,
