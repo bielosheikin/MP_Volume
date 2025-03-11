@@ -11,41 +11,44 @@ from .ion_and_channels_link import IonChannelsLink
 from .histories_storage import HistoriesStorage
 from math import log10
 from ..nestconf import Configurable
-from dataclasses import field
+from typing import Optional, Dict, Any
 
 
 class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
+    display_name: str = 'simulation'
     time_step: float = 0.001
     total_time: float = 100.0
     temperature: float = 2578.5871 / IDEAL_GAS_CONSTANT
     init_buffer_capacity: float = 5e-4
+    channels: Optional[Dict[str, IonChannel]] = None
+    species: Optional[Dict[str, IonSpecies]] = None
+    ion_channel_links: Optional[IonChannelsLink] = None
+    vesicle_params: Optional[Dict[str, Any]] = None
+    exterior_params: Optional[Dict[str, Any]] = None
     
-    # Non-config fields don't need type annotations
+    # Non-config fields
     TRACKABLE_FIELDS = ('buffer_capacity', 'time')
 
-    def __init__(self,
-                 *,
-                 channels: dict = None,
-                 species: dict = None,
-                 ion_channel_links: IonChannelsLink = None,
-                 vesicle_params: dict = None,
-                 exterior_params: dict = None,
-                 display_name: str = 'simulation',
-                 **kwargs):
+    def __init__(self, **kwargs):
         Configurable.__init__(self, **kwargs)
-        Trackable.__init__(self, display_name=display_name)
+        Trackable.__init__(self, display_name=self.display_name)
 
         # Initialize simulation parameters
         self.iter_num = int(self.total_time / self.time_step)
         self.time = 0.0
 
-        # Default configs
-        self.channels = channels if channels is not None else default_channels
-        self.species = species if species is not None else default_ion_species
-        self.ion_channel_links = ion_channel_links if ion_channel_links is not None else IonChannelsLink()
-        self.vesicle_params = vesicle_params if vesicle_params is not None else {}
-        self.exterior_params = exterior_params if exterior_params is not None else {}
+        # Set default values if not provided
+        if self.channels is None:
+            self.channels = default_channels
+        if self.species is None:
+            self.species = default_ion_species
+        if self.ion_channel_links is None:
+            self.ion_channel_links = IonChannelsLink()
+        if self.vesicle_params is None:
+            self.vesicle_params = {}
+        if self.exterior_params is None:
+            self.exterior_params = {}
 
         # External components and tracking
         self.exterior = None
