@@ -15,7 +15,7 @@ class IonSpecies(Trackable):
                  **kwargs
                  ):
         
-        super(IonSpecies, self).__init__(display_name=display_name, **kwargs)
+        super().__init__(display_name=display_name, **kwargs)
         self.init_vesicle_conc = init_vesicle_conc
         self.exterior_conc = exterior_conc
         self.elementary_charge = elementary_charge
@@ -25,7 +25,7 @@ class IonSpecies(Trackable):
 
     def connect_channel(self, channel: IonChannel, secondary_species=None):
         """Connect a channel to the ion species, verifying compatibility."""
-        if channel.config.allowed_secondary_ion is not None:  # Two-ion channel
+        if channel.allowed_secondary_ion is not None:  # Two-ion channel
             if secondary_species is None:
                 raise ValueError(
                     f"TwoIonChannel '{channel.display_name}' requires a secondary ion species for '{self.display_name}'."
@@ -42,7 +42,7 @@ class IonSpecies(Trackable):
             if not self._validate_channel_compatibility(channel, self):
                 raise ValueError(
                     f"Channel '{channel.display_name}' does not support the ion species '{self.display_name}'. "
-                    f"Expected primary ion type is '{channel.config.allowed_primary_ion}'."
+                    f"Expected primary ion type is '{channel.allowed_primary_ion}'."
                 )
             # Connect this species as primary ion
             channel.connect_species(self)
@@ -66,15 +66,15 @@ class IonSpecies(Trackable):
                                         ):
         """
         Check whether the channel is compatible with the given ion species, allowing flexible order.
-        - For single-ion channels, ensure the species matches `ALLOWED_PRIMARY_ION` if it's the primary.
-        - For two-ion channels, ensure both species match `ALLOWED_PRIMARY_ION` and `ALLOWED_SECONDARY_ION`
+        - For single-ion channels, ensure the species matches `allowed_primary_ion` if it's the primary.
+        - For two-ion channels, ensure both species match `allowed_primary_ion` and `allowed_secondary_ion`
           in either order.
         """
-        if channel.config.allowed_secondary_ion:  # Two-ion channel check
-            valid_order_1 = (primary_species.display_name == channel.config.allowed_primary_ion and
-                             secondary_species.display_name == channel.config.allowed_secondary_ion)
-            valid_order_2 = (primary_species.display_name == channel.config.allowed_secondary_ion and
-                             secondary_species.display_name == channel.config.allowed_primary_ion)
+        if channel.allowed_secondary_ion:  # Two-ion channel check
+            valid_order_1 = (primary_species.display_name == channel.allowed_primary_ion and
+                             secondary_species.display_name == channel.allowed_secondary_ion)
+            valid_order_2 = (primary_species.display_name == channel.allowed_secondary_ion and
+                             secondary_species.display_name == channel.allowed_primary_ion)
             return valid_order_1 or valid_order_2
         else:  # Single-ion channel check
-            return primary_species.display_name == channel.config.allowed_primary_ion
+            return primary_species.display_name == channel.allowed_primary_ion

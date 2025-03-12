@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 class IonChannel(Configurable, Trackable):
     # Configuration fields defined directly in the class
+    display_name: str = None  # Add display_name as a config field
     conductance: Optional[float] = None
     channel_type: Optional[str] = None
     voltage_dep: Optional[str] = None
@@ -33,6 +34,8 @@ class IonChannel(Configurable, Trackable):
                  display_name: str = None,
                  **kwargs):
         # First initialize parent classes so we have access to config
+        if display_name is not None:
+            kwargs['display_name'] = display_name
         super().__init__(**kwargs)
 
         # Initialize tracking fields

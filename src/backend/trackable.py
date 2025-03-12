@@ -7,14 +7,19 @@ class Trackable:
     A base class for objects that can be tracked over time.
     """
     
-    def __init__(self, display_name: str):
+    def __init__(self, **kwargs):
         """
         Initialize a trackable object.
         
         Args:
-            display_name (str): The name to display for this object in plots and output.
+            **kwargs: Keyword arguments, including display_name if provided directly
         """
-        self.display_name = display_name
+        # display_name will be set by Configurable if it's a config field,
+        # otherwise we need to set it from kwargs or raise an error
+        if not hasattr(self, 'display_name'):
+            if 'display_name' not in kwargs:
+                raise ValueError("display_name must be provided either as a config field or as an argument")
+            self.display_name = kwargs['display_name']
 
     @property
     def TRACKABLE_FIELDS(self) -> Tuple[str, ...]:
