@@ -1,4 +1,4 @@
-from backend.ion_channels import IonChannel
+from .ion_channels import IonChannel
 
 default_channels = {
     "asor": IonChannel(

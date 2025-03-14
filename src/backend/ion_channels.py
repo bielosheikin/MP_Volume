@@ -1,11 +1,11 @@
 from math import exp, log
-from backend.trackable import Trackable
-from backend.flux_calculation_parameters import FluxCalculationParameters
-from nestconf import Configurable
+from .trackable import Trackable
+from .flux_calculation_parameters import FluxCalculationParameters
+from ..nestconf import Configurable
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from backend.ion_species import IonSpecies
+    from .ion_species import IonSpecies
 
 
 class IonChannel(Configurable, Trackable):
@@ -134,7 +134,7 @@ class IonChannel(Configurable, Trackable):
         return self.time_dependence
                 
     def connect_species(self, primary_species: 'IonSpecies', secondary_species: 'IonSpecies' = None):
-        from backend.ion_species import IonSpecies
+        from .ion_species import IonSpecies
         """Connect ion species and validate based on the allowed ions."""
         if secondary_species is None:
             # Single-ion channel handling

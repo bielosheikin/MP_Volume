@@ -1,4 +1,4 @@
-from backend.ion_species import IonSpecies
+from .ion_species import IonSpecies
 
 default_ion_species = {
     "cl": IonSpecies(

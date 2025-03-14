@@ -1,7 +1,7 @@
 from abc import ABC
 import numpy as np
 from typing import List, Tuple
-from backend.trackable import Trackable
+from .trackable import Trackable
 
 
 class HistoriesStorage:
