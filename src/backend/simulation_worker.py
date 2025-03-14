@@ -1,6 +1,6 @@
 from PyQt5.QtCore import QObject, pyqtSignal
 
-from .simulation import Simulation
+from backend.simulation import Simulation
 
 class SimulationWorker(QObject):
     finished = pyqtSignal(Simulation)  # Emit the updated Simulation object

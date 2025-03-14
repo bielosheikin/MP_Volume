@@ -1,6 +1,6 @@
-from .trackable import Trackable
-from .ion_channels import IonChannel
-from .flux_calculation_parameters import FluxCalculationParameters
+from backend.trackable import Trackable
+from backend.ion_channels import IonChannel
+from backend.flux_calculation_parameters import FluxCalculationParameters
 
 class IonSpecies(Trackable):
 

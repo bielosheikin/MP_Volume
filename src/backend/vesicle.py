@@ -1,7 +1,8 @@
 import math
-from .trackable import Trackable
-from .constants import FARADAY_CONSTANT
-from ..nestconf import Configurable
+import numpy as np
+from backend.trackable import Trackable
+from backend.constants import FARADAY_CONSTANT
+from nestconf import Configurable
 
 
 class Vesicle(Configurable, Trackable):
