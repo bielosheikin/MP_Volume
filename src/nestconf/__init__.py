@@ -1,2 +1,5 @@
-from .config import Config
-from .configurable import Configurable
+"""
+Configuration management package.
+"""
+
+from .configurable import Configurable, Config

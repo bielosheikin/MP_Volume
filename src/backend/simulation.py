@@ -1,16 +1,16 @@
-from .constants import IDEAL_GAS_CONSTANT, FARADAY_CONSTANT, VOLUME_TO_AREA_CONSTANT
-from .trackable import Trackable
-from .exterior import Exterior
-from .vesicle import Vesicle
-from .ion_species import IonSpecies
-from .ion_channels import IonChannel
-from .flux_calculation_parameters import FluxCalculationParameters
-from .default_channels import default_channels
-from .default_ion_species import default_ion_species
-from .ion_and_channels_link import IonChannelsLink
-from .histories_storage import HistoriesStorage
+from backend.constants import IDEAL_GAS_CONSTANT, FARADAY_CONSTANT, VOLUME_TO_AREA_CONSTANT
+from backend.trackable import Trackable
+from backend.exterior import Exterior
+from backend.vesicle import Vesicle
+from backend.ion_species import IonSpecies
+from backend.ion_channels import IonChannel
+from backend.flux_calculation_parameters import FluxCalculationParameters
+from backend.default_channels import default_channels
+from backend.default_ion_species import default_ion_species
+from backend.ion_and_channels_link import IonChannelsLink
+from backend.histories_storage import HistoriesStorage
 from math import log10
-from ..nestconf import Configurable
+from nestconf import Configurable
 from typing import Optional, Dict, Any
 
 

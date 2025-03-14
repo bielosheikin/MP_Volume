@@ -1,5 +1,5 @@
-from .trackable import Trackable
-from ..nestconf import Configurable
+from backend.trackable import Trackable
+from nestconf import Configurable
 
 
 class Exterior(Configurable, Trackable):
