@@ -6,12 +6,12 @@ src_path = os.path.abspath('../src')
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-from backend.simulation import Simulation
-from backend.ion_species import IonSpecies
-from backend.ion_channels import IonChannel
-from backend.default_channels import default_channels
-from backend.default_ion_species import default_ion_species
-from backend.ion_and_channels_link import IonChannelsLink
+from src.backend.simulation import Simulation
+from src.backend.ion_species import IonSpecies
+from src.backend.ion_channels import IonChannel
+from src.backend.default_channels import default_channels
+from src.backend.default_ion_species import default_ion_species
+from src.backend.ion_and_channels_link import IonChannelsLink
 
 import matplotlib.pyplot as plt
 import numpy as np
