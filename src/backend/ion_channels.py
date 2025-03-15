@@ -123,6 +123,16 @@ class IonChannel(Configurable, Trackable):
         """Compute the voltage dependence."""
         if self.voltage_exponent is None or self.half_act_voltage is None:
             raise ValueError("Voltage dependence parameters are not set.")
+
+        # Clamp the voltage to prevent math range errors
+        MAX_VOLTAGE = 709 / self.voltage_exponent + self.half_act_voltage
+        if voltage > MAX_VOLTAGE:
+            print(f"Warning: Voltage {voltage} exceeds the safe limit. Clamping to {MAX_VOLTAGE}.")
+            voltage = MAX_VOLTAGE
+        elif voltage < -MAX_VOLTAGE:
+            print(f"Warning: Voltage {voltage} is below the negative safe limit. Clamping to {-MAX_VOLTAGE}.")
+            voltage = -MAX_VOLTAGE
+
         self.voltage_dependence = 1.0 / (1.0 + exp(self.voltage_exponent * (voltage - self.half_act_voltage)))
         return self.voltage_dependence
 
@@ -184,6 +194,10 @@ class IonChannel(Configurable, Trackable):
                 exterior_primary = self.primary_ion_species.exterior_conc ** self.primary_exponent
                 vesicle_primary = self.primary_ion_species.vesicle_conc ** self.primary_exponent
 
+            # Ensure concentrations are positive
+            if exterior_primary <= 0 or vesicle_primary <= 0:
+                raise ValueError("Primary ion concentrations must be positive.")
+
             # Start log_term with primary ion concentrations
             log_term = exterior_primary / vesicle_primary
 
@@ -199,6 +213,10 @@ class IonChannel(Configurable, Trackable):
                 else:
                     exterior_secondary = self.secondary_ion_species.exterior_conc ** self.secondary_exponent
                     vesicle_secondary = self.secondary_ion_species.vesicle_conc ** self.secondary_exponent
+
+                # Ensure secondary concentrations are positive
+                if exterior_secondary <= 0 or vesicle_secondary <= 0:
+                    raise ValueError("Secondary ion concentrations must be positive.")
 
                 # Incorporate secondary ion concentrations into the log term
                 log_term *= vesicle_secondary / exterior_secondary

@@ -78,6 +78,13 @@ class TestSimulation(unittest.TestCase):
             exterior_params=self.exterior_params
         )
         self.assertEqual(simulation.vesicle_params, extreme_vesicle_params)
+        
+        # Run the simulation to check for errors
+        try:
+            histories = simulation.run()
+            self.assertIsNotNone(histories)
+        except Exception as e:
+            self.fail(f"Simulation failed with extreme vesicle parameters: {e}")
 
     def test_missing_vesicle_params(self):
         # Test with missing vesicle parameters

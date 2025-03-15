@@ -193,9 +193,14 @@ class Simulation(Configurable, Trackable):
         if hydrogen_species:
             # Calculate free hydrogen in the vesicle using buffer capacity
             free_hydrogen_conc = hydrogen_species.vesicle_conc * self.buffer_capacity
-        
-            # Calculate the pH as the negative log of the free hydrogen concentration
-            self.vesicle.pH = -log10(free_hydrogen_conc)
+            
+            # Ensure free_hydrogen_conc is positive
+            if free_hydrogen_conc <= 0:
+                print("Warning: free_hydrogen_conc is zero or negative. Setting pH to a default value.")
+                self.vesicle.pH = 7.0  # Default pH value
+            else:
+                # Calculate the pH as the negative log of the free hydrogen concentration
+                self.vesicle.pH = -log10(free_hydrogen_conc)
         else:
             raise ValueError("Hydrogen species not found in the simulation.")
 
@@ -214,6 +219,11 @@ class Simulation(Configurable, Trackable):
     def update_vesicle_concentrations(self):
         for ion in self.all_species:
             ion.vesicle_conc = ion.vesicle_amount / (1000 * self.vesicle.volume)
+            
+            # Ensure vesicle concentration is positive
+            if ion.vesicle_conc <= 0:
+                print(f"Warning: {ion.display_name} vesicle concentration is zero or negative. Setting to a minimum threshold.")
+                ion.vesicle_conc = 1e-9  # Minimum threshold for concentration
 
     def update_simulation_state(self):
         self.update_volume()
