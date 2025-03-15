@@ -34,6 +34,28 @@ class Simulation(Configurable, Trackable):
         # Initialize both parent classes with their required parameters
         super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
         
+        # Check for invalid time parameters
+        if self.time_step <= 0:
+            raise ValueError("time_step must be positive.")
+        if self.total_time < 0:
+            raise ValueError("total_time cannot be negative.")
+
+        # Use default vesicle parameters if none provided
+        if self.vesicle_params is None:
+            default_vesicle = Vesicle()
+            self.vesicle_params = {
+                "init_radius": default_vesicle.init_radius,
+                "init_voltage": default_vesicle.init_voltage,
+                "init_pH": default_vesicle.init_pH,
+            }
+
+        # Use default exterior parameters if none provided
+        if self.exterior_params is None:
+            default_exterior = Exterior()
+            self.exterior_params = {
+                "pH": default_exterior.pH,
+            }
+
         # Initialize simulation parameters
         self.iter_num = int(self.total_time / self.time_step)
         self.time = 0.0
