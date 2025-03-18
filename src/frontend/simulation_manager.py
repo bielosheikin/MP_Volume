@@ -10,6 +10,20 @@ class SimulationManager:
         self.worker = None
 
     def start_simulation(self):
+        # Clean up any existing thread and worker
+        if self.thread is not None:
+            self.thread.quit()
+            self.thread.wait()
+            self.thread.deleteLater()
+            self.thread = None
+        if self.worker is not None:
+            self.worker.deleteLater()
+            self.worker = None
+
+        # Flush histories (clear data but keep registered objects)
+        self.simulation.histories.flush_histories()
+        
+        # Create new thread and worker
         self.thread = QThread()
         self.worker = SimulationWorker(self.simulation)
         self.worker.moveToThread(self.thread)
@@ -24,3 +38,20 @@ class SimulationManager:
 
         # Start the thread
         self.thread.start()
+
+    def cleanup(self):
+        """Clean up resources when the simulation manager is no longer needed."""
+        try:
+            if self.thread is not None:
+                if self.thread.isRunning():
+                    self.thread.quit()
+                    self.thread.wait()
+                self.thread.deleteLater()
+                self.thread = None
+            if self.worker is not None:
+                self.worker.deleteLater()
+                self.worker = None
+        except RuntimeError:
+            # Handle case where C++ object is already deleted
+            self.thread = None
+            self.worker = None

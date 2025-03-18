@@ -52,9 +52,14 @@ class ResultsTab(QWidget):
         self.histories_dict = None
 
     def plot_results(self, histories_dict):
+        """Plot the simulation results."""
+        if not histories_dict:
+            print("Warning: No history data received")
+            return
+
         self.figure.clear()
 
-        # Store the most recent `histories_dict` for saving and plotting
+        # Store the most recent histories_dict for saving and plotting
         self.histories_dict = histories_dict
 
         # Enable the save button since calculations are now done
@@ -62,17 +67,24 @@ class ResultsTab(QWidget):
 
         # Populate dropdowns with variable names and set defaults (only once)
         variable_names = list(histories_dict.keys())
+        if not variable_names:
+            print("Warning: No variables found in histories")
+            return
+        
         for i, (x_dropdown, y_dropdown) in enumerate(self.axis_dropdowns):
             if x_dropdown.count() == 0:  # Populate only if not already populated
                 x_dropdown.addItems(variable_names)
                 y_dropdown.addItems(variable_names)
 
             # Set defaults
-            x_dropdown.setCurrentText('simulation_time')
-            y_dropdown.setCurrentText(self.default_y_vars[i])
+            if 'simulation_time' in variable_names:
+                x_dropdown.setCurrentText('simulation_time')
+            if i < len(self.default_y_vars) and self.default_y_vars[i] in variable_names:
+                y_dropdown.setCurrentText(self.default_y_vars[i])
 
-        # Default plot settings
+        # Update the graphs with the new data
         self.update_graphs()
+        self.figure.canvas.draw()
 
     def update_graphs(self):
         """Update the graphs based on the selected x and y variables."""
@@ -128,6 +140,7 @@ class ResultsTab(QWidget):
             try:
                 # Save `histories_dict` data to CSV
                 self.export_histories_to_csv(file_path)
+                print(f"Results successfully saved to {file_path}")
             except Exception as e:
                 print(f"An error occurred while saving the file: {e}")
 
@@ -150,5 +163,3 @@ class ResultsTab(QWidget):
             for i in range(num_rows):
                 row = [histories_dict[key][i] for key in keys]  # Extract data for all keys at index i
                 writer.writerow(row)
-
-        print(f"Results successfully saved to {file_path}!")

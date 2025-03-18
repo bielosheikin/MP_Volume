@@ -49,16 +49,32 @@ class SimulationGUI(QMainWindow):
 
     def run_simulation(self):
         try:
-            print("Simulation started")
+            print("Simulation started")  # Keep this essential user feedback
 
             # Disable the "Run" button while simulation is running
             self.simulation_tab.run_button.setEnabled(False)
+
+            # Clean up previous simulation manager if it exists
+            if hasattr(self, 'simulation_manager'):
+                self.simulation_manager.cleanup()
 
             # Gather data from tabs
             vesicle_data = self.vesicle_tab.get_data()
             ion_species_data_plain = self.ion_species_tab.get_data()
             channels_data_plain, ion_channel_links = self.channels_tab.get_data()
             simulation_params = self.simulation_tab.get_data()
+
+            # Check for name conflicts between ion species and channels
+            conflicts = []
+            for channel_name in channels_data_plain.keys():
+                if channel_name in ion_species_data_plain:
+                    conflicts.append(channel_name)
+            
+            if conflicts:
+                error_msg = f"Name conflict detected: {', '.join(conflicts)} used for both ion species and channels.\n\nPlease ensure all ion species and channels have unique names."
+                QMessageBox.critical(self, "Name Conflict Error", error_msg)
+                self.simulation_tab.run_button.setEnabled(True)
+                return
 
             # Convert plain ion species data to IonSpecies objects
             ion_species_data = {
@@ -71,6 +87,10 @@ class SimulationGUI(QMainWindow):
                 for name, data in ion_species_data_plain.items()
             }
 
+            # Remove 'display_name' from data to avoid duplication
+            for name, data in channels_data_plain.items():
+                data.pop('display_name', None)
+
             # Convert plain channel data to IonChannel objects with direct parameters
             channels_data = {
                 name: IonChannel(
@@ -80,7 +100,7 @@ class SimulationGUI(QMainWindow):
                 for name, data in channels_data_plain.items()
             }
 
-            # Create the simulation with all parameters
+            # Create a fresh simulation instance with all parameters
             simulation = Simulation(
                 **simulation_params,  # time_step and total_time
                 channels=channels_data,
@@ -89,7 +109,7 @@ class SimulationGUI(QMainWindow):
                 **vesicle_data  # vesicle_params and exterior_params
             )
             
-            # Use SimulationManager
+            # Create new simulation manager
             self.simulation_manager = SimulationManager(
                 simulation,
                 progress_callback=self.simulation_tab.progress_bar.setValue,
@@ -98,19 +118,24 @@ class SimulationGUI(QMainWindow):
             self.simulation_manager.start_simulation()
 
         except Exception as e:
-            print(f"Error in SimulationWorker: {e}")
+            print(f"Error in simulation: {e}")  # Keep this for error reporting
             self.simulation_tab.run_button.setEnabled(True)  # Re-enable the button if an error occurs
 
     def handle_results(self, simulation):
-        print("Simulation completed!")
+        print("Simulation completed")  # Keep this essential user feedback
 
         # Re-enable the "Run" button when simulation finishes
         self.simulation_tab.run_button.setEnabled(True)
 
         # Access results from the simulation
         histories = simulation.histories
-        self.tabs.setCurrentWidget(self.results_tab)
-
+        
         # Display results
         self.results_tab.plot_results(histories.get_histories())
         self.tabs.setCurrentWidget(self.results_tab)
+
+    def closeEvent(self, event):
+        """Clean up resources when the window is closed."""
+        if hasattr(self, 'simulation_manager'):
+            self.simulation_manager.cleanup()
+        super().closeEvent(event)

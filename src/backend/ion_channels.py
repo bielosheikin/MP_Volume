@@ -33,9 +33,13 @@ class IonChannel(Configurable, Trackable):
                  *,
                  display_name: str = None,
                  **kwargs):
-        # First initialize parent classes so we have access to config
+        # Ensure display_name is not duplicated in kwargs
+        if 'display_name' in kwargs:
+            kwargs.pop('display_name')
         if display_name is not None:
             kwargs['display_name'] = display_name
+
+        # First initialize parent classes so we have access to config
         super().__init__(**kwargs)
 
         # Initialize tracking fields

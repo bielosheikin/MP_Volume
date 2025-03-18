@@ -11,6 +11,7 @@ class SimulationWorker(QObject):
         self.simulation = simulation
 
     def run(self):
+        """Run the simulation and emit progress updates."""
         total_iterations = self.simulation.iter_num
         self.simulation.set_ion_amounts()
         self.simulation.get_unaccounted_ion_amount()
@@ -18,9 +19,10 @@ class SimulationWorker(QObject):
         for i in range(total_iterations):
             self.simulation.run_one_iteration()
 
-            # Emit progress every 100 iterations
+            # Emit progress every 1000 iterations
             if (i + 1) % 1000 == 0 or i + 1 == total_iterations:
                 progress = int(((i + 1) / total_iterations) * 100)
                 self.progressChanged.emit(progress)
-
+                # Progress is shown in the GUI, no need for terminal output
+        
         self.finished.emit(self.simulation)

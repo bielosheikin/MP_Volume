@@ -80,6 +80,8 @@ class Simulation(Configurable, Trackable):
         self.histories = HistoriesStorage()
         self.nernst_constant = self.temperature * IDEAL_GAS_CONSTANT / FARADAY_CONSTANT
         self.unaccounted_ion_amounts = None
+
+        # Register the simulation object itself first
         self.histories.register_object(self)
 
         # Initialize simulation components
@@ -102,20 +104,37 @@ class Simulation(Configurable, Trackable):
         """
         Initialize ions and channels and link them based on the IonChannelsLink configuration.
         """
-        # Step 1: Connect channels to species
-        for species_name, links in self.ion_channel_links.get_links().items():
-            primary_species = self.species[species_name]
-            for channel_name, secondary_species_name in links:
-                channel = self.channels[channel_name]
-                secondary_species = self.species.get(secondary_species_name)
-                primary_species.connect_channel(channel=channel, secondary_species=secondary_species)
+        # Check for name conflicts between species and channels
+        species_names = set(self.species.keys())
+        channel_names = set(self.channels.keys())
+        conflicts = species_names.intersection(channel_names)
+        if conflicts:
+            conflict_list = ", ".join(conflicts)
+            raise ValueError(f"Name conflict detected: {conflict_list} used for both ion species and channels. " 
+                             f"Please ensure all ion species and channels have unique names.")
 
-                # Register each channel in HistoriesStorage
-                self.histories.register_object(channel)
-
-        # Step 2: Add species to the simulation
+        # Step 1: Register all species first
         for species in self.species.values():
             self.add_ion_species(species)
+
+        # Step 2: Connect channels to species and register channels
+        for species_name, links in self.ion_channel_links.get_links().items():
+            if species_name not in self.species:
+                print(f"Warning: Species '{species_name}' not found for linking")
+                continue  # Skip if species doesn't exist
+            primary_species = self.species[species_name]
+            for channel_name, secondary_species_name in links:
+                if channel_name not in self.channels:
+                    print(f"Warning: Channel '{channel_name}' not found for linking")
+                    continue  # Skip if channel doesn't exist
+                channel = self.channels[channel_name]
+                secondary_species = self.species.get(secondary_species_name)
+                try:
+                    primary_species.connect_channel(channel=channel, secondary_species=secondary_species)
+                    # Register each channel in HistoriesStorage
+                    self.histories.register_object(channel)
+                except Exception as e:
+                    raise ValueError(f"Error connecting channel '{channel_name}' to species '{species_name}': {str(e)}")
 
     def add_ion_species(self, 
                         species_obj: IonSpecies
@@ -246,7 +265,6 @@ class Simulation(Configurable, Trackable):
         fluxes = [ion.compute_total_flux(flux_calculation_parameters=flux_calculation_parameters) for ion in self.all_species]
 
         self.histories.update_histories()
-        
         self.update_ion_amounts(fluxes)
 
         self.time += self.time_step
@@ -257,7 +275,6 @@ class Simulation(Configurable, Trackable):
         self.get_unaccounted_ion_amount()
 
         for iter_idx in range(self.iter_num):
-            # print(f'Iter #: {iter_idx}')
             self.run_one_iteration()
         
         return self.histories
