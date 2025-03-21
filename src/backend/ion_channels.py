@@ -125,15 +125,47 @@ class IonChannel(Configurable, Trackable):
 
     def compute_pH_dependence(self, pH: float):
         """Compute the pH dependence."""
+        # If dependency type doesn't include pH, return 1.0 (no effect)
+        if self.dependence_type not in ["pH", "voltage_and_pH"]:
+            self.pH_dependence = 1.0
+            return self.pH_dependence
+            
+        # Ensure parameters are set for pH dependency
         if self.pH_exponent is None or self.half_act_pH is None:
-            raise ValueError("pH dependence parameters are not set.")
+            # If the parameters aren't set but we're supposed to use pH dependency,
+            # use default values rather than raising an error
+            if self.channel_type == 'wt':
+                self.pH_exponent = 3.0
+                self.half_act_pH = 5.4
+            elif self.channel_type == 'mt':
+                self.pH_exponent = 1.0
+                self.half_act_pH = 7.4
+            elif self.channel_type == 'clc':
+                self.pH_exponent = -1.5
+                self.half_act_pH = 5.5
+            else:
+                # Default values if no channel type is specified
+                self.pH_exponent = 3.0
+                self.half_act_pH = 5.4
+            print(f"Warning: pH dependence parameters were not set. Using defaults: exponent={self.pH_exponent}, half_act={self.half_act_pH}")
+            
         self.pH_dependence = 1.0 / (1.0 + exp(self.pH_exponent * (pH - self.half_act_pH)))
         return self.pH_dependence
 
     def compute_voltage_dependence(self, voltage: float):
         """Compute the voltage dependence."""
+        # If dependency type doesn't include voltage, return 1.0 (no effect)
+        if self.dependence_type not in ["voltage", "voltage_and_pH"]:
+            self.voltage_dependence = 1.0
+            return self.voltage_dependence
+            
+        # Ensure parameters are set for voltage dependency
         if self.voltage_exponent is None or self.half_act_voltage is None:
-            raise ValueError("Voltage dependence parameters are not set.")
+            # If the parameters aren't set but we're supposed to use voltage dependency, 
+            # use default values rather than raising an error
+            self.voltage_exponent = 80.0
+            self.half_act_voltage = -0.04
+            print(f"Warning: Voltage dependence parameters were not set. Using defaults: exponent={self.voltage_exponent}, half_act={self.half_act_voltage}")
 
         # Clamp the voltage to prevent math range errors
         MAX_VOLTAGE = 709 / self.voltage_exponent + self.half_act_voltage
@@ -149,8 +181,19 @@ class IonChannel(Configurable, Trackable):
 
     def compute_time_dependence(self, time: float):
         """Compute the time dependence."""
+        # If dependency type is not time, return 1.0 (no effect)
+        if self.dependence_type != "time":
+            self.time_dependence = 1.0
+            return self.time_dependence
+            
+        # Ensure parameters are set for time dependency
         if self.time_exponent is None or self.half_act_time is None:
-            raise ValueError("Time dependence parameters are not set.")
+            # If the parameters aren't set but we're supposed to use time dependency,
+            # use default values rather than raising an error
+            self.time_exponent = 0.0
+            self.half_act_time = 0.0
+            print(f"Warning: Time dependence parameters were not set. Using defaults: exponent={self.time_exponent}, half_act={self.half_act_time}")
+            
         self.time_dependence = 1.0 / (1.0 + exp(self.time_exponent * (self.half_act_time - time)))
         return self.time_dependence
                 
@@ -202,15 +245,24 @@ class IonChannel(Configurable, Trackable):
                 vesicle_primary = flux_calculation_parameters.vesicle_hydrogen_free ** self.primary_exponent
             else:
                 # Regular concentration for primary ion
-                exterior_primary = self.primary_ion_species.exterior_conc ** self.primary_exponent
-                vesicle_primary = self.primary_ion_species.vesicle_conc ** self.primary_exponent
+                try:
+                    exterior_primary = self.primary_ion_species.exterior_conc ** self.primary_exponent
+                    vesicle_primary = self.primary_ion_species.vesicle_conc ** self.primary_exponent
+                except (ValueError, TypeError):
+                    ion_name = self.primary_ion_species.display_name
+                    raise ValueError(f"Math error with ion concentrations. Primary ion ({ion_name}): exterior={self.primary_ion_species.exterior_conc}, vesicle={self.primary_ion_species.vesicle_conc}, exponent={self.primary_exponent}")
 
             # Ensure concentrations are positive
             if exterior_primary <= 0 or vesicle_primary <= 0:
-                raise ValueError("Primary ion concentrations must be positive.")
+                ion_name = self.primary_ion_species.display_name
+                raise ValueError(f"Primary ion ({ion_name}) concentrations must be positive. Got: exterior={self.primary_ion_species.exterior_conc}, vesicle={self.primary_ion_species.vesicle_conc}")
 
             # Start log_term with primary ion concentrations
-            log_term = exterior_primary / vesicle_primary
+            try:
+                log_term = exterior_primary / vesicle_primary
+            except ZeroDivisionError:
+                ion_name = self.primary_ion_species.display_name
+                raise ValueError(f"Division by zero in log term calculation for primary ion ({ion_name}). Vesicle concentration is zero.")
 
             # Handle secondary ion with free hydrogen dependence (if applicable)
             if self.secondary_ion_species:
@@ -222,17 +274,29 @@ class IonChannel(Configurable, Trackable):
                     exterior_secondary = flux_calculation_parameters.exterior_hydrogen_free ** self.secondary_exponent
                     vesicle_secondary = flux_calculation_parameters.vesicle_hydrogen_free ** self.secondary_exponent
                 else:
-                    exterior_secondary = self.secondary_ion_species.exterior_conc ** self.secondary_exponent
-                    vesicle_secondary = self.secondary_ion_species.vesicle_conc ** self.secondary_exponent
+                    try:
+                        exterior_secondary = self.secondary_ion_species.exterior_conc ** self.secondary_exponent
+                        vesicle_secondary = self.secondary_ion_species.vesicle_conc ** self.secondary_exponent
+                    except (ValueError, TypeError):
+                        ion_name = self.secondary_ion_species.display_name
+                        raise ValueError(f"Math error with ion concentrations. Secondary ion ({ion_name}): exterior={self.secondary_ion_species.exterior_conc}, vesicle={self.secondary_ion_species.vesicle_conc}, exponent={self.secondary_exponent}")
 
                 # Ensure secondary concentrations are positive
                 if exterior_secondary <= 0 or vesicle_secondary <= 0:
-                    raise ValueError("Secondary ion concentrations must be positive.")
+                    ion_name = self.secondary_ion_species.display_name
+                    raise ValueError(f"Secondary ion ({ion_name}) concentrations must be positive. Got: exterior={self.secondary_ion_species.exterior_conc}, vesicle={self.secondary_ion_species.vesicle_conc}")
 
                 # Incorporate secondary ion concentrations into the log term
-                log_term *= vesicle_secondary / exterior_secondary
+                try:
+                    log_term *= vesicle_secondary / exterior_secondary
+                except ZeroDivisionError:
+                    ion_name = self.secondary_ion_species.display_name
+                    raise ValueError(f"Division by zero in log term calculation for secondary ion ({ion_name}). Exterior concentration is zero.")
 
-            return log(log_term)
+            try:
+                return log(log_term)
+            except (ValueError, TypeError):
+                raise ValueError(f"Cannot compute logarithm of {log_term}. Log term must be positive.")
 
         except ZeroDivisionError:
             raise ValueError("Concentration values resulted in a division by zero in log term calculation.")
@@ -257,26 +321,35 @@ class IonChannel(Configurable, Trackable):
         area = flux_calculation_parameters.area
         flux = self.flux_multiplier * self.nernst_potential * self.conductance * area
         
-        # Apply voltage dependence
+        # Apply voltage dependence only if this channel has voltage dependency
         if self.dependence_type in ["voltage", "voltage_and_pH"]:
             if flux_calculation_parameters.voltage is None:
                 raise ValueError("Voltage value must be provided for voltage-dependent channels.")
             self.voltage_dependence = self.compute_voltage_dependence(flux_calculation_parameters.voltage)
             flux *= self.voltage_dependence
+        else:
+            # Set a default value for tracking even if not used
+            self.voltage_dependence = 1.0
 
-        # Apply pH dependence
+        # Apply pH dependence only if this channel has pH dependency
         if self.dependence_type in ["pH", "voltage_and_pH"]:
             if flux_calculation_parameters.pH is None:
                 raise ValueError("pH value must be provided for pH-dependent channels.")
             self.pH_dependence = self.compute_pH_dependence(flux_calculation_parameters.pH)
             flux *= self.pH_dependence
+        else:
+            # Set a default value for tracking even if not used
+            self.pH_dependence = 1.0
 
-        # Apply time dependence
+        # Apply time dependence only if this channel has time dependency
         if self.dependence_type == "time":
             if flux_calculation_parameters.time is None:
                 raise ValueError("Time value must be provided for time-dependent channels.")
             self.time_dependence = self.compute_time_dependence(flux_calculation_parameters.time)
             flux *= self.time_dependence
+        else:
+            # Set a default value for tracking even if not used
+            self.time_dependence = 1.0
 
         self.flux = flux
         return self.flux

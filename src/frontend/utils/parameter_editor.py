@@ -10,6 +10,8 @@ class ParameterEditorDialog(QDialog):
         
         self.parameters = parameters
         self.original_types = {key: type(value) for key, value in parameters.items()}
+        self.primary_ion = primary_ion
+        self.secondary_ion = secondary_ion
 
         self.layout = QVBoxLayout(self)
         
@@ -162,6 +164,12 @@ class ParameterEditorDialog(QDialog):
                 if key == 'conductance':
                     input_field.setStyleSheet("background-color: #ffffcc;")  # Light yellow background
                     input_field.setPlaceholderText("Enter a non-zero value (e.g. 1e-7)")
+                    
+                # Disable secondary_exponent if no secondary ion
+                if key == 'secondary_exponent' and not secondary_ion:
+                    input_field.setEnabled(False)
+                    input_field.setToolTip("No secondary ion is set for this channel")
+                    input_field.setText('0')  # Set to 0 if no secondary ion
 
             self.inputs[key] = input_field
             self.form_layout.addRow(display_name, input_field)
