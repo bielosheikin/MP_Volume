@@ -13,7 +13,6 @@ class IonChannel(Configurable, Trackable):
     display_name: str = None  # Add display_name as a config field
     conductance: Optional[float] = None
     channel_type: Optional[str] = None
-    voltage_dep: Optional[str] = None
     dependence_type: Optional[str] = None
     voltage_multiplier: Optional[float] = None
     nernst_multiplier: Optional[float] = None
@@ -25,6 +24,14 @@ class IonChannel(Configurable, Trackable):
     secondary_exponent: int = 1
     custom_nernst_constant: Optional[float] = None
     use_free_hydrogen: bool = False
+    
+    # Dependency-specific parameters
+    voltage_exponent: Optional[float] = None
+    half_act_voltage: Optional[float] = None
+    pH_exponent: Optional[float] = None
+    half_act_pH: Optional[float] = None
+    time_exponent: Optional[float] = None
+    half_act_time: Optional[float] = None
 
     # Non-config fields
     TRACKABLE_FIELDS = ('flux', 'nernst_potential', 'pH_dependence', 'voltage_dependence', 'time_dependence')
@@ -83,38 +90,38 @@ class IonChannel(Configurable, Trackable):
 
         # Configure pH dependence
         if self.dependence_type in ['pH', 'voltage_and_pH']:
-            match self.channel_type:
-                case 'wt':
-                    self.pH_exponent = 3.0
-                    self.half_act_pH = 5.4
-                case 'mt':
-                    self.pH_exponent = 1.0
-                    self.half_act_pH = 7.4
-                case 'none':
-                    self.pH_exponent = 0.0
-                    self.half_act_pH = 0.0
-                case 'clc':
-                    self.pH_exponent = -1.5
-                    self.half_act_pH = 5.5
-                case _:
-                    raise ValueError(f"Unsupported channel_type: {self.channel_type}")
+            # Set default values based on channel type if pH parameters aren't already set
+            if self.pH_exponent is None or self.half_act_pH is None:
+                match self.channel_type:
+                    case 'wt':
+                        self.pH_exponent = 3.0
+                        self.half_act_pH = 5.4
+                    case 'mt':
+                        self.pH_exponent = 1.0
+                        self.half_act_pH = 7.4
+                    case 'clc':
+                        self.pH_exponent = -1.5
+                        self.half_act_pH = 5.5
+                    case _:
+                        # Default values if no channel type is specified
+                        self.pH_exponent = 3.0
+                        self.half_act_pH = 5.4
+                        if self.channel_type is not None:
+                            raise ValueError(f"Unsupported channel_type: {self.channel_type}")
 
         # Configure voltage dependence
         if self.dependence_type in ['voltage', 'voltage_and_pH']:
-            match self.voltage_dep:
-                case 'yes':
-                    self.voltage_exponent = 80.0
-                    self.half_act_voltage = -0.04
-                case 'no':
-                    self.voltage_exponent = 0.0
-                    self.half_act_voltage = 0.0
-                case _:
-                    raise ValueError(f"Unsupported voltage_dep: {self.voltage_dep}")
+            # Set default values if voltage parameters aren't already set
+            if self.voltage_exponent is None or self.half_act_voltage is None:
+                self.voltage_exponent = 80.0
+                self.half_act_voltage = -0.04
 
         # Configure time dependence
         if self.dependence_type == 'time':
-            self.time_exponent = 0.0
-            self.half_act_time = 0.0
+            # Set default values if time parameters aren't already set
+            if self.time_exponent is None or self.half_act_time is None:
+                self.time_exponent = 0.0
+                self.half_act_time = 0.0
 
     def compute_pH_dependence(self, pH: float):
         """Compute the pH dependence."""

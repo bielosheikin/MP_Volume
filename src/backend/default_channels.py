@@ -4,7 +4,6 @@ default_channels = {
     "asor": IonChannel(
         conductance=8e-5,
         channel_type='wt',
-        voltage_dep='yes',
         dependence_type='voltage_and_pH',
         voltage_multiplier=1,
         nernst_multiplier=1,
@@ -12,12 +11,15 @@ default_channels = {
         flux_multiplier=1,
         allowed_primary_ion='cl',
         primary_exponent=1,
+        voltage_exponent=80.0,
+        half_act_voltage=-0.04,
+        pH_exponent=3.0,
+        half_act_pH=5.4,
         display_name='ASOR'
     ),
     "clc": IonChannel(
         conductance=1e-7,
         channel_type='clc',
-        voltage_dep='yes',
         dependence_type='voltage_and_pH',
         voltage_multiplier=1,
         nernst_multiplier=1 / 3,
@@ -27,6 +29,10 @@ default_channels = {
         allowed_secondary_ion='h',
         primary_exponent=2,
         secondary_exponent=1,
+        voltage_exponent=80.0,
+        half_act_voltage=-0.04,
+        pH_exponent=-1.5,
+        half_act_pH=5.5,
         use_free_hydrogen=True,
         display_name='CLC'
     ),
@@ -65,12 +71,13 @@ default_channels = {
         flux_multiplier=-1,
         allowed_primary_ion='h',
         primary_exponent=1,
+        time_exponent=0.0,
+        half_act_time=0.0,
         display_name='VATPase'
     ),
     "clc_h": IonChannel(
         conductance=1e-7,
         channel_type='clc',
-        voltage_dep='yes',
         dependence_type='voltage_and_pH',
         voltage_multiplier=1,
         nernst_multiplier=1 / 3,
@@ -80,6 +87,10 @@ default_channels = {
         allowed_secondary_ion='h',
         primary_exponent=2,
         secondary_exponent=1,
+        voltage_exponent=80.0,
+        half_act_voltage=-0.04,
+        pH_exponent=-1.5,
+        half_act_pH=5.5,
         use_free_hydrogen=True,
         display_name='CLC_H'
     ),

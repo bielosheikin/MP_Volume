@@ -10,8 +10,11 @@ class ChannelsTab(QWidget):
         layout = QVBoxLayout()
 
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Channel Name", "Primary Ion Name", "Secondary Ion Name", "Edit Parameters"])
+        self.table.setColumnCount(5)  # Add a column for parameters summary
+        self.table.setHorizontalHeaderLabels(["Channel Name", "Primary Ion Name", "Secondary Ion Name", "Edit", "Parameters"])
+
+        # Enable cell double-clicks for editing
+        self.table.cellDoubleClicked.connect(self.edit_parameters)
 
         # Store parameters for each channel
         self.channel_parameters = {}
@@ -41,10 +44,12 @@ class ChannelsTab(QWidget):
         """Extract only the configuration parameters from a channel object."""
         # Define the configuration fields we want to expose to the user
         config_fields = [
-            'display_name', 'conductance', 'channel_type', 'voltage_dep', 'dependence_type',
+            'display_name', 'conductance', 'channel_type', 'dependence_type',
             'voltage_multiplier', 'nernst_multiplier', 'voltage_shift', 'flux_multiplier',
             'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
-            'custom_nernst_constant', 'use_free_hydrogen'
+            'custom_nernst_constant', 'use_free_hydrogen',
+            'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
+            'time_exponent', 'half_act_time'
         ]
         
         # Extract only these fields from the channel object
@@ -66,7 +71,6 @@ class ChannelsTab(QWidget):
             parameters = {
                 'conductance': 1e-7,  # Default to a small non-zero conductance
                 'channel_type': None,  # No default channel type for new channels
-                'voltage_dep': None,   # No default voltage dependency
                 'dependence_type': None,  # No default dependence type
                 'voltage_multiplier': 1,
                 'nernst_multiplier': 1,
@@ -79,47 +83,71 @@ class ChannelsTab(QWidget):
                 'custom_nernst_constant': None,
                 'use_free_hydrogen': False
             }
-            if channel_name:
-                self.channel_parameters[channel_name] = parameters
+            # Save these parameters for the new channel
+            self.channel_parameters[display_name] = parameters
+            channel_name = display_name
 
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(channel_name))
-        self.table.setItem(row, 1, QTableWidgetItem(primary_ion))
+        self.table.setItem(row, 1, QTableWidgetItem(primary_ion if primary_ion else ""))
         self.table.setItem(row, 2, QTableWidgetItem(secondary_ion if secondary_ion else ""))
         edit_button = QPushButton("Edit")
-        edit_button.clicked.connect(lambda: self.edit_parameters(row, parameters))
+        edit_button.clicked.connect(lambda: self.edit_parameters(row, 0))
         self.table.setCellWidget(row, 3, edit_button)
+        
+        # Create a readable parameter summary for the last column
+        param_summary = []
+        if parameters.get('conductance'):
+            param_summary.append(f"Conductance: {parameters['conductance']}")
+        if parameters.get('dependence_type'):
+            param_summary.append(f"Dependency: {parameters['dependence_type']}")
+        if parameters.get('channel_type'):
+            param_summary.append(f"Type: {parameters['channel_type']}")
+        
+        parameters_cell = ", ".join(param_summary)
+        self.table.setItem(row, 4, QTableWidgetItem(parameters_cell))
 
-    def edit_parameters(self, row, parameters):
+    def edit_parameters(self, row, column):
+        # Only respond to double-clicks on the channel name cell (column 0) or parameters cell (column 4)
+        if column not in [0, 4]:
+            return
+        
+        # Get the channel name from column 0
         channel_name = self.table.item(row, 0).text()
+        if not channel_name:
+            return
+
+        # Get ion names from the table
+        primary_ion = self.table.item(row, 1).text() if self.table.item(row, 1) else None
+        secondary_ion = self.table.item(row, 2).text() if self.table.item(row, 2) else None
         
-        # If this is a default channel, ensure we have all the correct default values
-        if channel_name in default_channels:
-            # Get default channel configuration
-            default_config = default_channels[channel_name]
-            default_params = self.extract_config_parameters(default_config)
-            
-            # For default channels, enforce non-zero conductance
-            if default_params.get('conductance', 0.0) > 0:
-                if 'conductance' not in parameters or parameters['conductance'] == 0.0 or parameters['conductance'] is None:
-                    parameters['conductance'] = default_params['conductance']
-                    print(f"Restoring default conductance for {channel_name}")
-                    
-            # Only update parameters that aren't already set to ensure we don't lose user edits
-            for key, value in default_params.items():
-                if key not in parameters or parameters[key] is None:
-                    parameters[key] = value
-            
-            # Simplified log message
-            print(f"Using default channel settings for {channel_name}")
-        
-        dialog = ParameterEditorDialog(parameters)
+        # Get existing parameters or use defaults
+        parameters = self.channel_parameters.get(channel_name, {}).copy()
+
+        # Check if we should use default values for this channel
+        if not parameters and channel_name in default_channels:
+            default_channel = default_channels[channel_name]
+            # Extract configuration parameters from the default channel
+            parameters = self.extract_config_parameters(default_channel)
+
+        # Create and show the parameter editor dialog
+        dialog = ParameterEditorDialog(parameters, channel_name, primary_ion, secondary_ion, self)
         if dialog.exec_():
-            if channel_name:
-                # Store updated parameters in our dictionary
-                self.channel_parameters[channel_name] = parameters
-                print(f"Updated parameters for {channel_name}")
+            # Get updated parameters from the dialog
+            updated_parameters = dialog.parameters
+            
+            # If this channel had parameters listed in defaults, make sure
+            # we're not editing the default channel itself
+            if channel_name in default_channels:
+                # Save the updated parameters in our channel_parameters dict
+                self.channel_parameters[channel_name] = updated_parameters
+            else:
+                # For custom channels, also update our channel_parameters dict
+                self.channel_parameters[channel_name] = updated_parameters
+            
+            # Update the table to show changes
+            self.update_parameters_display(row, updated_parameters)
 
     def add_channel(self):
         self.add_channel_row("", "", "", {})
@@ -163,7 +191,6 @@ class ChannelsTab(QWidget):
             processed_parameters = {
                 'conductance': float(parameters.get('conductance', 0.0)),
                 'channel_type': None if parameters.get('channel_type') in [None, 'None'] else parameters['channel_type'],
-                'voltage_dep': None if parameters.get('voltage_dep') in [None, 'None'] else parameters['voltage_dep'],
                 'dependence_type': None if parameters.get('dependence_type') in [None, 'None'] else parameters['dependence_type'],
                 'voltage_multiplier': float(parameters.get('voltage_multiplier', 0)),
                 'nernst_multiplier': float(parameters.get('nernst_multiplier', 1)),
@@ -187,30 +214,29 @@ class ChannelsTab(QWidget):
             
             # Add dependence-specific parameters
             if processed_parameters['dependence_type'] in ['pH', 'voltage_and_pH']:
-                if processed_parameters['channel_type'] == 'wt':
-                    processed_parameters['pH_exponent'] = 3.0
-                    processed_parameters['half_act_pH'] = 5.4
-                elif processed_parameters['channel_type'] == 'mt':
-                    processed_parameters['pH_exponent'] = 1.0
-                    processed_parameters['half_act_pH'] = 7.4
-                elif processed_parameters['channel_type'] == 'none':
-                    processed_parameters['pH_exponent'] = 0.0
-                    processed_parameters['half_act_pH'] = 0.0
-                elif processed_parameters['channel_type'] == 'clc':
-                    processed_parameters['pH_exponent'] = -1.5
-                    processed_parameters['half_act_pH'] = 5.5
+                processed_parameters['pH_exponent'] = float(parameters.get('pH_exponent', 3.0))
+                processed_parameters['half_act_pH'] = float(parameters.get('half_act_pH', 5.4))
+                
+                # Use pH values based on channel type if not explicitly set
+                if parameters.get('channel_type') and not parameters.get('pH_exponent'):
+                    if parameters['channel_type'] == 'wt':
+                        processed_parameters['pH_exponent'] = 3.0
+                        processed_parameters['half_act_pH'] = 5.4
+                    elif parameters['channel_type'] == 'mt':
+                        processed_parameters['pH_exponent'] = 1.0
+                        processed_parameters['half_act_pH'] = 7.4
+                    elif parameters['channel_type'] == 'clc':
+                        processed_parameters['pH_exponent'] = -1.5
+                        processed_parameters['half_act_pH'] = 5.5
 
             if processed_parameters['dependence_type'] in ['voltage', 'voltage_and_pH']:
-                if processed_parameters['voltage_dep'] == 'yes':
-                    processed_parameters['voltage_exponent'] = 80.0
-                    processed_parameters['half_act_voltage'] = -0.04
-                elif processed_parameters['voltage_dep'] == 'no':
-                    processed_parameters['voltage_exponent'] = 0.0
-                    processed_parameters['half_act_voltage'] = 0.0
+                # Set voltage dependency parameters
+                processed_parameters['voltage_exponent'] = float(parameters.get('voltage_exponent', 80.0))
+                processed_parameters['half_act_voltage'] = float(parameters.get('half_act_voltage', -0.04))
 
             if processed_parameters['dependence_type'] == 'time':
-                processed_parameters['time_exponent'] = 0.0
-                processed_parameters['half_act_time'] = 0.0
+                processed_parameters['time_exponent'] = float(parameters.get('time_exponent', 0.0))
+                processed_parameters['half_act_time'] = float(parameters.get('half_act_time', 0.0))
 
             channels[channel_name] = processed_parameters
             print(f"Adding link: {primary_ion} → {channel_name}" + (f" → {secondary_ion}" if secondary_ion else ""))
@@ -222,3 +248,22 @@ class ChannelsTab(QWidget):
         total_links = sum(len(links) for links in self.ion_channel_links.get_links().values())
         print(f"Total links: {total_links}")
         return channels, self.ion_channel_links
+
+    def update_parameters_display(self, row, parameters):
+        """Update the display to show the edited parameters"""
+        # Update parameters cell if it exists
+        if self.table.columnCount() > 4:
+            # Create a readable parameter summary for display in the table
+            param_summary = []
+            if parameters.get('conductance'):
+                param_summary.append(f"Conductance: {parameters['conductance']}")
+            if parameters.get('dependence_type'):
+                param_summary.append(f"Dependency: {parameters['dependence_type']}")
+            if parameters.get('channel_type'):
+                param_summary.append(f"Type: {parameters['channel_type']}")
+            
+            parameters_cell = ", ".join(param_summary)
+            self.table.setItem(row, 4, QTableWidgetItem(parameters_cell))
+        
+        # Let the table know data has changed
+        self.table.viewport().update()
