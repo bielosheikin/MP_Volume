@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QPushButton, QProgressBar
+from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QPushButton, QProgressBar, QMessageBox
 
 class SimulationParamsTab(QWidget):
     def __init__(self):
@@ -13,7 +13,7 @@ class SimulationParamsTab(QWidget):
 
         self.total_time = QDoubleSpinBox()
         self.total_time.setDecimals(1)
-        self.total_time.setRange(0.0, 10000.0)
+        self.total_time.setRange(0.1, 10000.0)
         self.total_time.setValue(1000.0)
         layout.addRow("Total Simulation Time (s):", self.total_time)
 
@@ -27,8 +27,28 @@ class SimulationParamsTab(QWidget):
         self.setLayout(layout)
 
     def get_data(self):
+        # Validate parameters before returning
+        time_step = self.time_step.value()
+        total_time = self.total_time.value()
+        
+        if time_step <= 0:
+            QMessageBox.warning(self, "Invalid Parameter", 
+                               "Time step must be positive. Please enter a value greater than 0.")
+            return None
+            
+        if total_time <= 0:
+            QMessageBox.warning(self, "Invalid Parameter", 
+                               "Total simulation time cannot be negative. Please enter a positive value.")
+            return None
+            
+        # Check if time step is too large compared to total time
+        if time_step >= total_time:
+            QMessageBox.warning(self, "Invalid Parameter Combination", 
+                               "Time step must be smaller than total simulation time.")
+            return None
+            
         # These parameters are now direct configuration fields in the Simulation class
         return {
-            "time_step": self.time_step.value(),
-            "total_time": self.total_time.value(),
+            "time_step": time_step,
+            "total_time": total_time,
         }

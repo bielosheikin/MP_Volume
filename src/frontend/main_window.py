@@ -3,9 +3,10 @@ import os
 
 # Add the 'src' directory to the Python path
 # sys.path.append(r"C:\Away\FMP\MP_volume_GUI\MP_Volume_V5\src")
-from PyQt5.QtCore import QThread
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget
+from PyQt5.QtCore import QThread, Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QSizePolicy
 from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtGui import QFont
 
 from .vesicle_tab import VesicleTab
 from .ion_species_tab import IonSpeciesTab
@@ -27,9 +28,19 @@ class SimulationGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Simulation GUI")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 1024, 768)  # Larger default window size
+        
+        # Set application-wide font
+        app = QApplication.instance()
+        font = QFont()
+        font.setPointSize(10)  # Larger font size
+        app.setFont(font)
+        
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
+        
+        # Make the central widget expand to fill available space
+        self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Add tabs
         self.vesicle_tab = VesicleTab()
@@ -37,6 +48,11 @@ class SimulationGUI(QMainWindow):
         self.channels_tab = ChannelsTab()
         self.simulation_tab = SimulationParamsTab()
         self.results_tab = ResultsTab()
+
+        # Set size policies for all tabs to expand
+        for tab in [self.vesicle_tab, self.ion_species_tab, 
+                   self.channels_tab, self.simulation_tab, self.results_tab]:
+            tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.tabs.addTab(self.vesicle_tab, "Vesicle/Exterior")
         self.tabs.addTab(self.ion_species_tab, "Ion Species")
@@ -60,9 +76,24 @@ class SimulationGUI(QMainWindow):
 
             # Gather data from tabs
             vesicle_data = self.vesicle_tab.get_data()
+            if vesicle_data is None:
+                self.simulation_tab.run_button.setEnabled(True)
+                return
+                
             ion_species_data_plain = self.ion_species_tab.get_data()
+            if ion_species_data_plain is None:
+                self.simulation_tab.run_button.setEnabled(True)
+                return
+                
             channels_data_plain, ion_channel_links = self.channels_tab.get_data()
+            if channels_data_plain is None:
+                self.simulation_tab.run_button.setEnabled(True)
+                return
+                
             simulation_params = self.simulation_tab.get_data()
+            if simulation_params is None:
+                self.simulation_tab.run_button.setEnabled(True)
+                return
 
             # Check for name conflicts between ion species and channels
             conflicts = []
@@ -73,6 +104,13 @@ class SimulationGUI(QMainWindow):
             if conflicts:
                 error_msg = f"Name conflict detected: {', '.join(conflicts)} used for both ion species and channels.\n\nPlease ensure all ion species and channels have unique names."
                 QMessageBox.critical(self, "Name Conflict Error", error_msg)
+                self.simulation_tab.run_button.setEnabled(True)
+                return
+            
+            # Check if hydrogen species exists for pH calculations
+            if 'h' not in ion_species_data_plain:
+                warning_msg = "Hydrogen ion species ('h') not found. Hydrogen is required for pH calculations and some channel types.\n\nAdd a hydrogen ion to continue."
+                QMessageBox.warning(self, "Missing Hydrogen Species", warning_msg)
                 self.simulation_tab.run_button.setEnabled(True)
                 return
 
@@ -101,13 +139,18 @@ class SimulationGUI(QMainWindow):
             }
 
             # Create a fresh simulation instance with all parameters
-            simulation = Simulation(
-                **simulation_params,  # time_step and total_time
-                channels=channels_data,
-                species=ion_species_data,
-                ion_channel_links=ion_channel_links,
-                **vesicle_data  # vesicle_params and exterior_params
-            )
+            try:
+                simulation = Simulation(
+                    **simulation_params,  # time_step and total_time
+                    channels=channels_data,
+                    species=ion_species_data,
+                    ion_channel_links=ion_channel_links,
+                    **vesicle_data  # vesicle_params and exterior_params
+                )
+            except ValueError as e:
+                QMessageBox.critical(self, "Simulation Parameter Error", str(e))
+                self.simulation_tab.run_button.setEnabled(True)
+                return
             
             # Create new simulation manager
             self.simulation_manager = SimulationManager(
@@ -118,7 +161,9 @@ class SimulationGUI(QMainWindow):
             self.simulation_manager.start_simulation()
 
         except Exception as e:
-            print(f"Error in simulation: {e}")  # Keep this for error reporting
+            error_msg = f"Error in simulation: {str(e)}"
+            print(error_msg)  # Keep this for error reporting
+            QMessageBox.critical(self, "Simulation Error", error_msg)
             self.simulation_tab.run_button.setEnabled(True)  # Re-enable the button if an error occurs
 
     def handle_results(self, simulation):
