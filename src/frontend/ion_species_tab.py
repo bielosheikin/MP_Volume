@@ -1,14 +1,20 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox
+from PyQt5.QtCore import pyqtSignal
 from ..backend.default_ion_species import default_ion_species
 
 class IonSpeciesTab(QWidget):
+    ion_species_updated = pyqtSignal()  # Signal to notify when ion species are updated
+    
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
 
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Ion Name", "Init Vesicle Conc", "Exterior Conc", "Charge"])
+        self.table.setColumnCount(5)  # Add column for delete buttons
+        self.table.setHorizontalHeaderLabels(["Ion Name", "Init Vesicle Conc", "Exterior Conc", "Charge", "Actions"])
+        
+        # Connect cell changed signal
+        self.table.itemChanged.connect(self.on_item_changed)
 
         for ion_name, ion_data in default_ion_species.items():
             self.add_ion_row(ion_name, ion_data.init_vesicle_conc, ion_data.exterior_conc, ion_data.elementary_charge)
@@ -20,6 +26,14 @@ class IonSpeciesTab(QWidget):
         layout.addWidget(self.add_button)
 
         self.setLayout(layout)
+        
+        # Emit signal that initial species are loaded
+        self.ion_species_updated.emit()
+        
+    def on_item_changed(self, item):
+        """Handle when an ion species is modified"""
+        # Emit the signal whenever any item changes
+        self.ion_species_updated.emit()
 
     def add_ion_row(self, name, init_vesicle_conc, exterior_conc, charge):
         row = self.table.rowCount()
@@ -38,9 +52,27 @@ class IonSpeciesTab(QWidget):
             self.table.setItem(row, 2, QTableWidgetItem(f"{exterior_conc:.3f}"))
             
         self.table.setItem(row, 3, QTableWidgetItem(str(charge)))
+        
+        # Add a delete button
+        delete_button = QPushButton("Delete")
+        delete_button.clicked.connect(lambda checked=False, r=row: self.delete_ion_species(r))
+        self.table.setCellWidget(row, 4, delete_button)
 
     def add_ion_species(self):
+        # Temporarily block signals to avoid multiple emissions
+        self.table.blockSignals(True)
         self.add_ion_row("", 0.000, 0.000, 0)
+        self.table.blockSignals(False)
+        
+        # Emit the signal after adding a new row
+        self.ion_species_updated.emit()
+        
+    def delete_ion_species(self, row):
+        """Delete an ion species from the table"""
+        self.table.removeRow(row)
+        
+        # Emit the signal after deleting a row
+        self.ion_species_updated.emit()
 
     def get_data(self):
         ion_species = {}

@@ -269,61 +269,53 @@ class ParameterEditorDialog(QDialog):
             self.inputs['half_act_time'] = half_act_time
 
     def save_parameters(self):
-        # Map from UI friendly names back to backend values
-        value_map_dependence = {
-            'None': None,
-            'pH': 'pH',
-            'Voltage': 'voltage',
-            'Voltage and pH': 'voltage_and_pH',
-            'Time': 'time'
-        }
-        
-        value_map_channel_type = {
-            'WT': 'wt',
-            'MT': 'mt',
-            'CLC': 'clc'
-        }
-        
+        """Save the edited parameters and close the dialog"""
+        # Collect values from input fields
         for key, input_field in self.inputs.items():
-            original_type = self.original_types.get(key) if key in self.original_types else None
-            
-            # Handle different input field types
+            # Handle different input types
             if isinstance(input_field, QCheckBox):
                 self.parameters[key] = input_field.isChecked()
             elif isinstance(input_field, QComboBox):
-                ui_value = input_field.currentText()
-                # Convert UI value back to backend value
+                combo_value = input_field.currentText()
+                # Map UI values back to backend values for dependence_type
                 if key == 'dependence_type':
-                    self.parameters[key] = value_map_dependence.get(ui_value, None)
-                elif key == 'channel_type':
-                    self.parameters[key] = value_map_channel_type.get(ui_value, None)
-                else:
-                    self.parameters[key] = ui_value
-            else:  # QLineEdit
-                value = input_field.text()
-                
-                # Handle empty strings
-                if value == '':
-                    self.parameters[key] = None
-                # Convert to original type if possible
-                elif original_type in (int, float):
-                    try:
-                        if original_type == int:
-                            self.parameters[key] = int(value)
-                        else:  # float
-                            self.parameters[key] = float(value)
-                    except ValueError:
-                        # If conversion fails, keep as string
-                        self.parameters[key] = value
-                else:
-                    # Try to convert to float for dependency parameters
-                    if key in ['voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 'time_exponent', 'half_act_time']:
-                        try:
-                            self.parameters[key] = float(value)
-                        except ValueError:
-                            self.parameters[key] = value
+                    if combo_value == 'None':
+                        self.parameters[key] = None
+                    elif combo_value == 'Voltage and pH':
+                        self.parameters[key] = 'voltage_and_pH'
                     else:
-                        self.parameters[key] = value
+                        self.parameters[key] = combo_value.lower()
+                # Map UI values back to backend values for channel_type
+                elif key == 'channel_type':
+                    if combo_value == 'None':
+                        self.parameters[key] = None
+                    else:
+                        self.parameters[key] = combo_value.lower()
+                else:
+                    self.parameters[key] = combo_value
+            else:
+                # For text inputs (QLineEdit)
+                try:
+                    # First, try to convert to the original type
+                    original_type = self.original_types.get(key, str)
+                    
+                    # Handle None values
+                    text_value = input_field.text().strip()
+                    if text_value.lower() in ['none', '']:
+                        self.parameters[key] = None
+                    # For numeric types, convert from string
+                    elif original_type in [int, float]:
+                        # Allow scientific notation for floats
+                        if original_type == float:
+                            self.parameters[key] = float(text_value)
+                        else:
+                            self.parameters[key] = int(text_value)
+                    else:
+                        # For other types, just use the string value
+                        self.parameters[key] = text_value
+                except ValueError as e:
+                    # If conversion fails, just use the string value
+                    self.parameters[key] = input_field.text()
         
         # Validate conductance
         if 'conductance' in self.parameters:
@@ -347,4 +339,9 @@ class ParameterEditorDialog(QDialog):
                                    "The conductance value is invalid. Please enter a valid number.")
                 return
         
+        # Accept the dialog (close with OK result)
         self.accept()
+        
+    def get_parameters(self):
+        """Return the current parameters dictionary"""
+        return self.parameters
