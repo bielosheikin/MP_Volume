@@ -1,24 +1,24 @@
 from .trackable import Trackable
 from .ion_channels import IonChannel
 from .flux_calculation_parameters import FluxCalculationParameters
+from ..nestconf import Configurable
+from typing import Dict, Any, List, Optional
 
-class IonSpecies(Trackable):
+class IonSpecies(Configurable, Trackable):
+    # Configuration fields defined directly in the class
+    display_name: str = None
+    init_vesicle_conc: float = 0.0
+    exterior_conc: float = 0.0
+    elementary_charge: float = 0.0
 
+    # Non-config fields
     TRACKABLE_FIELDS = ('vesicle_conc', 'vesicle_amount')
 
-    def __init__(self,
-                 *, 
-                 init_vesicle_conc: float, 
-                 exterior_conc: float, 
-                 elementary_charge: float, 
-                 display_name: str = None, 
-                 **kwargs
-                 ):
+    def __init__(self, **kwargs):
+        # Initialize parent classes first
+        super().__init__(**kwargs)
         
-        super().__init__(display_name=display_name, **kwargs)
-        self.init_vesicle_conc = init_vesicle_conc
-        self.exterior_conc = exterior_conc
-        self.elementary_charge = elementary_charge
+        # Initialize non-config instance variables
         self.channels = []  # List of connected channels
         self.vesicle_conc = self.init_vesicle_conc
         self.vesicle_amount = None

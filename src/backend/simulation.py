@@ -12,6 +12,11 @@ from .histories_storage import HistoriesStorage
 from math import log10
 from ..nestconf import Configurable
 from typing import Optional, Dict, Any
+import os
+import json
+import pickle
+import numpy as np
+import time
 
 
 class Simulation(Configurable, Trackable):
@@ -30,9 +35,12 @@ class Simulation(Configurable, Trackable):
     # Non-config fields
     TRACKABLE_FIELDS = ('buffer_capacity', 'time')
 
-    def __init__(self, **kwargs):
+    def __init__(self, simulations_path=None, **kwargs):
         # Initialize both parent classes with their required parameters
         super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
+        
+        # Store the simulations path (not part of config)
+        self.simulations_path = simulations_path
         
         # Check for invalid time parameters
         if self.time_step <= 0:
@@ -114,11 +122,23 @@ class Simulation(Configurable, Trackable):
                              f"Please ensure all ion species and channels have unique names.")
 
         # Step 1: Register all species first
-        for species in self.species.values():
-            self.add_ion_species(species)
+        for species_name, species_config in self.species.items():
+            # Create IonSpecies instance with configuration
+            if not isinstance(species_config, IonSpecies):
+                # Convert dictionary to IonSpecies
+                species_obj = IonSpecies(
+                    display_name=species_name,
+                    **species_config
+                )
+                self.species[species_name] = species_obj
+            else:
+                species_obj = species_config
+            
+            self.add_ion_species(species_obj)
 
         # Step 2: Connect channels to species and register channels
-        for species_name, links in self.ion_channel_links.get_links().items():
+        ion_channel_links = self.ion_channel_links.get_links()
+        for species_name, links in ion_channel_links.items():
             if species_name not in self.species:
                 print(f"Warning: Species '{species_name}' not found for linking")
                 continue  # Skip if species doesn't exist
@@ -278,3 +298,129 @@ class Simulation(Configurable, Trackable):
             self.run_one_iteration()
         
         return self.histories
+    
+    def save_simulation(self):
+        """
+        Save the simulation configuration and histories to a directory named with the configuration hash.
+        The directory is created under the simulations_path.
+        
+        Saves:
+        - config.json: The simulation configuration in JSON format
+        - config.pickle: The simulation configuration in pickle format (if possible)
+        - histories/*.npy: Each history value as a separate numpy file in the 'histories' subdirectory
+        
+        Returns:
+            str: The path to the created simulation directory
+        """
+        if not self.simulations_path:
+            raise ValueError("simulations_path is not set. Unable to save simulation.")
+        
+        # Create the simulations root directory if it doesn't exist
+        os.makedirs(self.simulations_path, exist_ok=True)
+        
+        # Generate a hash from the simulation configuration
+        config_hash = self.config.to_sha256_str()
+        
+        # Create a directory for this specific simulation using the hash as the name
+        simulation_dir = os.path.join(self.simulations_path, config_hash)
+        os.makedirs(simulation_dir, exist_ok=True)
+        
+        # Create the histories subdirectory
+        histories_dir = os.path.join(simulation_dir, "histories")
+        os.makedirs(histories_dir, exist_ok=True)
+        
+        # Prepare metadata to include in the JSON
+        metadata = {
+            "version": "1.0",
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "hash": config_hash
+        }
+        
+        # Save the configuration in JSON format
+        try:
+            # Create a dictionary with metadata and simulation config
+            config_with_metadata = {
+                "metadata": metadata,
+                "simulation": self.config.to_dict()
+            }
+            
+            # Save to JSON
+            config_json_path = os.path.join(simulation_dir, "config.json")
+            with open(config_json_path, 'w') as f:
+                json.dump(config_with_metadata, f, indent=4, default=str)
+            print(f"Configuration saved to JSON: {config_json_path}")
+            
+            # Also save the raw simulation configuration
+            raw_config_path = os.path.join(simulation_dir, "raw_config.json")
+            with open(raw_config_path, 'w') as f:
+                json.dump(self.config.to_dict(), f, indent=4, default=str)
+                
+        except Exception as e:
+            print(f"Warning: Failed to save configuration as JSON: {str(e)}")
+        
+        # Extract the essential data to save (including all primitive types)
+        config_data = {
+            "metadata": metadata,
+            "simulation_config": {}
+        }
+        
+        # Include all serializable parameters from the config
+        config_dict = self.config.to_dict()
+        for key, value in config_dict.items():
+            if isinstance(value, (str, int, float, bool, type(None))):
+                config_data["simulation_config"][key] = value
+        
+        # Add specific known parameters that should be included
+        essential_params = [
+            "display_name", "time_step", "total_time", "temperature", 
+            "init_buffer_capacity"
+        ]
+        for param in essential_params:
+            if hasattr(self, param):
+                config_data["simulation_config"][param] = getattr(self, param)
+        
+        # Try first to pickle the entire simulation object
+        try:
+            pickle_path = os.path.join(simulation_dir, "simulation.pickle")
+            with open(pickle_path, 'wb') as f:
+                pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"Full simulation object saved to pickle: {pickle_path}")
+        except Exception as e:
+            print(f"Warning: Failed to pickle full simulation object: {str(e)}")
+            
+            # Fallback: save just the key config data
+            try:
+                config_pickle_path = os.path.join(simulation_dir, "config.pickle")
+                with open(config_pickle_path, 'wb') as f:
+                    pickle.dump(config_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"Configuration data saved to pickle: {config_pickle_path}")
+            except Exception as e:
+                print(f"Warning: Failed to save configuration as pickle: {str(e)}")
+        
+        # Save each history value as a separate numpy file
+        histories = self.histories.get_histories()
+        histories_saved = 0
+        for key, values in histories.items():
+            try:
+                history_file = os.path.join(histories_dir, f"{key}.npy")
+                np.save(history_file, np.array(values))
+                histories_saved += 1
+            except Exception as e:
+                print(f"Warning: Failed to save history for {key}: {str(e)}")
+        
+        # Save a metadata file for the histories
+        try:
+            history_metadata = {
+                "histories": list(histories.keys()),
+                "count": histories_saved,
+                "simulation_time": self.time,
+                "total_time": self.total_time,
+                "time_step": self.time_step
+            }
+            with open(os.path.join(histories_dir, "metadata.json"), 'w') as f:
+                json.dump(history_metadata, f, indent=4)
+        except Exception as e:
+            print(f"Warning: Failed to save history metadata: {str(e)}")
+        
+        print(f"Simulation saved to: {simulation_dir} ({histories_saved} histories saved)")
+        return simulation_dir

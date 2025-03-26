@@ -1,12 +1,24 @@
-class IonChannelsLink:
+from typing import Dict, Any, List, Tuple, Optional
+from ..nestconf import Configurable
+
+class IonChannelsLink(Configurable):
     """
     A class to manage and simplify the relationships between ion species and ion channels,
     with optional default setup corresponding to a predefined configuration.
     """
+    # Configuration fields defined directly in the class
+    links: Dict[str, List[Tuple[str, Optional[str]]]] = None  # Dictionary mapping species to channel links
 
-    def __init__(self, use_defaults=True):
-        # Initialize the links
-        self._links = self._create_default_links() if use_defaults else {}
+    def __init__(self, use_defaults=True, **kwargs):
+        # If links not provided in kwargs and use_defaults is True, create default links
+        if 'links' not in kwargs and use_defaults:
+            kwargs['links'] = self._create_default_links()
+        # Initialize with empty dict if links is None
+        elif 'links' not in kwargs:
+            kwargs['links'] = {}
+            
+        # Initialize parent class
+        super().__init__(**kwargs)
 
     def _create_default_links(self):
         """
@@ -53,22 +65,22 @@ class IonChannelsLink:
         if not species_name or not channel_name:  # Skip empty links
             return
             
-        if species_name not in self._links:
-            self._links[species_name] = []
+        if species_name not in self.links:
+            self.links[species_name] = []
         
         # Check if this link already exists
-        for existing_link in self._links[species_name]:
+        for existing_link in self.links[species_name]:
             if existing_link[0] == channel_name:
                 # Update the secondary species if it's different
                 if existing_link[1] != secondary_species_name:
-                    self._links[species_name].remove(existing_link)
+                    self.links[species_name].remove(existing_link)
                     break
                 else:
                     return  # Link already exists exactly as specified
                     
-        self._links[species_name].append((channel_name, secondary_species_name))
+        self.links[species_name].append((channel_name, secondary_species_name))
 
-    def get_links(self) -> dict:
+    def get_links(self) -> Dict[str, List[Tuple[str, Optional[str]]]]:
         """
         Retrieve all connections as a dictionary.
 
@@ -77,9 +89,9 @@ class IonChannelsLink:
         dict
             A dictionary mapping species names to lists of channel connections.
         """
-        return self._links
+        return self.links
 
-    def get_links_for_species(self, species_name: str) -> list:
+    def get_links_for_species(self, species_name: str) -> List[Tuple[str, Optional[str]]]:
         """
         Get connections for a specific ion species.
 
@@ -93,19 +105,19 @@ class IonChannelsLink:
         list
             A list of connections as tuples (channel_name, secondary_species_name).
         """
-        return self._links.get(species_name, [])
+        return self.links.get(species_name, [])
 
     def clear_links(self):
         """
         Clear all connections.
         """
-        self._links = {}
+        self.links = {}
 
     def reset_to_default(self):
         """
         Reset the links to the default configuration.
         """
-        self._links = self._create_default_links()
+        self.links = self._create_default_links()
 
     def remove_link(self, species_name: str, channel_name: str):
         """
@@ -118,10 +130,10 @@ class IonChannelsLink:
         channel_name : str
             The name of the channel to remove.
         """
-        if species_name in self._links:
-            self._links[species_name] = [
-                link for link in self._links[species_name]
+        if species_name in self.links:
+            self.links[species_name] = [
+                link for link in self.links[species_name]
                 if link[0] != channel_name
             ]
-            if not self._links[species_name]:  # Remove empty species entries
-                del self._links[species_name]
+            if not self.links[species_name]:  # Remove empty species entries
+                del self.links[species_name]
