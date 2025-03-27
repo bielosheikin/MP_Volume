@@ -1,8 +1,9 @@
 {
     "metadata": {
         "version": "1.0",
-        "timestamp": "2025-03-26 22:37:20",
-        "hash": "10ab8069cb9bd6226dec7efe54a67d59ffc77bf1de99b3051093bc66a09d9df4"
+        "timestamp": "2025-03-27 22:21:17",
+        "hash": "10ab8069cb9bd6226dec7efe54a67d59ffc77bf1de99b3051093bc66a09d9df4",
+        "index": 2
     },
     "simulation": {
         "display_name": "Test Simulation",

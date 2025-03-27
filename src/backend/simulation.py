@@ -39,8 +39,9 @@ class Simulation(Configurable, Trackable):
         # Initialize both parent classes with their required parameters
         super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
         
-        # Store the simulations path (not part of config)
+        # Store the simulations path and index (not part of config)
         self.simulations_path = simulations_path
+        self.simulation_index = 0
         
         # Check for invalid time parameters
         if self.time_step <= 0:
@@ -95,6 +96,30 @@ class Simulation(Configurable, Trackable):
         # Initialize simulation components
         self._initialize_vesicle_and_exterior()
         self._initialize_species_and_channels()
+        
+        # Set the simulation index based on existing saved simulations
+        if self.simulations_path:
+            self.update_simulation_index()
+
+    def update_simulation_index(self):
+        """Update the simulation index based on the number of existing saved simulations."""
+        if not self.simulations_path or not os.path.exists(self.simulations_path):
+            self.simulation_index = 1  # Start indexes from 1
+            return
+            
+        # Count only directories that contain a config.json file (actual simulation directories)
+        try:
+            simulation_count = 0
+            for d in os.listdir(self.simulations_path):
+                dir_path = os.path.join(self.simulations_path, d)
+                if os.path.isdir(dir_path) and os.path.exists(os.path.join(dir_path, "config.json")):
+                    simulation_count += 1
+            
+            # Start indexing from 1 (more user-friendly)
+            self.simulation_index = simulation_count + 1
+        except Exception as e:
+            print(f"Warning: Failed to count existing simulations: {str(e)}")
+            self.simulation_index = 1  # Default to 1 if counting fails
 
     def _initialize_vesicle_and_exterior(self):
         """
@@ -323,9 +348,29 @@ class Simulation(Configurable, Trackable):
         
         # Create a directory for this specific simulation using the hash as the name
         simulation_dir = os.path.join(self.simulations_path, config_hash)
-        os.makedirs(simulation_dir, exist_ok=True)
+        simulation_exists = os.path.exists(simulation_dir)
         
-        # Create the histories subdirectory
+        # If the simulation already exists, try to load its index
+        existing_index = None
+        if simulation_exists:
+            try:
+                config_json_path = os.path.join(simulation_dir, "config.json")
+                if os.path.exists(config_json_path):
+                    with open(config_json_path, 'r') as f:
+                        config_data = json.load(f)
+                    existing_index = config_data.get("metadata", {}).get("index")
+                    if existing_index is not None:
+                        self.simulation_index = existing_index
+                        print(f"Updating existing simulation with index {existing_index}")
+            except Exception as e:
+                print(f"Warning: Failed to load existing simulation index: {str(e)}")
+        
+        # Only update the index if this is a new simulation
+        if not simulation_exists:
+            self.update_simulation_index()
+        
+        # Create directories
+        os.makedirs(simulation_dir, exist_ok=True)
         histories_dir = os.path.join(simulation_dir, "histories")
         os.makedirs(histories_dir, exist_ok=True)
         
@@ -333,7 +378,8 @@ class Simulation(Configurable, Trackable):
         metadata = {
             "version": "1.0",
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "hash": config_hash
+            "hash": config_hash,
+            "index": self.simulation_index
         }
         
         # Save the configuration in JSON format
@@ -379,6 +425,9 @@ class Simulation(Configurable, Trackable):
             if hasattr(self, param):
                 config_data["simulation_config"][param] = getattr(self, param)
         
+        # Add non-config parameters that should be tracked
+        config_data["simulation_config"]["simulation_index"] = self.simulation_index
+        
         # Try first to pickle the entire simulation object
         try:
             pickle_path = os.path.join(simulation_dir, "simulation.pickle")
@@ -415,12 +464,18 @@ class Simulation(Configurable, Trackable):
                 "count": histories_saved,
                 "simulation_time": self.time,
                 "total_time": self.total_time,
-                "time_step": self.time_step
+                "time_step": self.time_step,
+                "simulation_index": self.simulation_index
             }
             with open(os.path.join(histories_dir, "metadata.json"), 'w') as f:
                 json.dump(history_metadata, f, indent=4)
         except Exception as e:
             print(f"Warning: Failed to save history metadata: {str(e)}")
         
-        print(f"Simulation saved to: {simulation_dir} ({histories_saved} histories saved)")
+        # Message differs based on whether this is a new or existing simulation
+        if simulation_exists:
+            print(f"Simulation updated at: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
+        else:
+            print(f"New simulation saved to: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
+        
         return simulation_dir

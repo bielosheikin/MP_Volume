@@ -29,6 +29,8 @@ def create_test_simulation():
     sim.set_ion_amounts()
     sim.get_unaccounted_ion_amount()
     
+    print(f"Initial simulation index: {sim.simulation_index}")
+    
     # Run the simulation for a few steps
     print("Running simulation for a few steps...")
     for _ in range(10):
@@ -36,7 +38,7 @@ def create_test_simulation():
     
     # Save the simulation
     path = sim.save_simulation()
-    print(f"Simulation saved to {path}")
+    print(f"Simulation saved to {path} with index {sim.simulation_index}")
     
     return path
 
@@ -58,7 +60,8 @@ def list_available_simulations(simulations_path="test_data"):
                     config_data = json.load(f)
                 display_name = config_data.get("simulation", {}).get("display_name", "Unknown")
                 timestamp = config_data.get("metadata", {}).get("timestamp", "Unknown")
-                print(f"{i}. {display_name} ({timestamp}) - {sim_dir}")
+                index = config_data.get("metadata", {}).get("index", "Unknown")
+                print(f"{i}. {display_name} (Index: {index}, Time: {timestamp}) - {sim_dir}")
             except Exception as e:
                 print(f"{i}. {sim_dir} - Error reading config: {str(e)}")
         else:
@@ -220,6 +223,7 @@ def test_load_simulation():
             # Print a summary of the loaded simulation
             print("\nSummary of loaded simulation:")
             print(f"Display name: {sim.display_name}")
+            print(f"Simulation index: {sim.simulation_index}")
             print(f"Time step: {sim.time_step}")
             print(f"Total time: {sim.total_time}")
             print(f"Temperature: {sim.temperature}")
