@@ -232,6 +232,63 @@ def test_suite_reloading():
     print("Suite reloading test passed!")
     return new_suite
 
+def test_run_all_unrun():
+    """Test running all unrun simulations in a suite."""
+    print("\n=== Testing Run All Unrun ===")
+    
+    # Create a fresh suite with simulations
+    root_dir = "test_simulation_suites"
+    suite_name = "RunAllSuite"
+    
+    # First create a suite and add simulations
+    suite = test_create_suite(suite_name, root_dir)
+    
+    # Add simulations but don't run them
+    sim1 = test_add_simulation(suite, "RunAllSim1", temperature=300.0)
+    sim2 = test_add_simulation(suite, "RunAllSim2", temperature=305.0)
+    sim3 = test_add_simulation(suite, "RunAllSim3", temperature=310.0)
+    
+    # Save all simulations (without running)
+    test_save_simulation(suite, sim1)
+    test_save_simulation(suite, sim2)
+    test_save_simulation(suite, sim3)
+    
+    # Verify none of them are marked as run
+    sims = suite.list_simulations()
+    for sim in sims:
+        assert not sim["has_run"], f"Simulation {sim['display_name']} should not be marked as run yet"
+    
+    # Run them all using run_all_unrun
+    print("\nRunning all unrun simulations...")
+    results = suite.run_all_unrun()
+    
+    # Verify all simulations ran successfully
+    assert len(results) == 3, f"Expected 3 simulation results, got {len(results)}"
+    for sim_hash, result in results.items():
+        assert result is True, f"Simulation {sim_hash} failed to run: {result}"
+    
+    # Verify they're now all marked as run
+    sims_after = suite.list_simulations()
+    for sim in sims_after:
+        assert sim["has_run"], f"Simulation {sim['display_name']} should be marked as run now"
+    
+    # Run again and verify no simulations are run
+    print("\nRunning again (should find no unrun simulations)...")
+    results_again = suite.run_all_unrun()
+    assert len(results_again) == 0, f"Expected 0 simulation results on second run, got {len(results_again)}"
+    
+    # Create a brand new suite instance with the same name and root to test persistence
+    print("\nRecreating suite to test persistence of has_run status...")
+    new_suite = SimulationSuite(suite_name, simulation_suites_root=root_dir)
+    
+    # Verify all simulations still show as run
+    reloaded_sims = new_suite.list_simulations()
+    for sim in reloaded_sims:
+        assert sim["has_run"], f"Reloaded simulation {sim['display_name']} lost its has_run status"
+    
+    print("Run all unrun test passed!")
+    return new_suite
+
 def run_all_tests():
     """Run all tests for the SimulationSuite class."""
     print("=== Starting SimulationSuite Tests ===")
@@ -252,6 +309,10 @@ def run_all_tests():
     # Test suite reloading
     print("\n--- Testing Suite Reloading ---")
     reloaded_suite = test_suite_reloading()
+    
+    # Test running all unrun simulations
+    print("\n--- Testing Run All Unrun ---")
+    new_suite = test_run_all_unrun()
     
     print("\n=== All SimulationSuite tests passed! ===")
 

@@ -1,0 +1,21 @@
+{
+    "name": "RunAllSuite",
+    "timestamp": "2025-03-31 20:28:03",
+    "simulations": [
+        {
+            "hash": "114e140d8d7d354e08cb06f3cf803be7949af279c98c34102e219ee8f5778ad6",
+            "display_name": "RunAllSim1",
+            "index": 0
+        },
+        {
+            "hash": "e226265542253cf876279ad691080ab1eff4acadfb93a83bbbcb3989da60264c",
+            "display_name": "RunAllSim2",
+            "index": 0
+        },
+        {
+            "hash": "312c86a0de4e5fb3155569ad38726e25fbc4b9c52e6a09c346df0e4322ac680c",
+            "display_name": "RunAllSim3",
+            "index": 0
+        }
+    ]
+}

@@ -43,6 +43,9 @@ class Simulation(Configurable, Trackable):
         self.simulations_path = simulations_path
         self.simulation_index = 0
         
+        # Track whether this simulation has been run
+        self.has_run = False
+        
         # Check for invalid time parameters
         if self.time_step <= 0:
             raise ValueError("time_step must be positive.")
@@ -322,6 +325,7 @@ class Simulation(Configurable, Trackable):
         for iter_idx in range(self.iter_num):
             self.run_one_iteration()
         
+        self.has_run = True
         return self.histories
     
     def save_simulation(self):
@@ -379,7 +383,8 @@ class Simulation(Configurable, Trackable):
             "version": "1.0",
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "hash": config_hash,
-            "index": self.simulation_index
+            "index": self.simulation_index,
+            "has_run": self.has_run
         }
         
         # Save the configuration in JSON format
@@ -465,7 +470,8 @@ class Simulation(Configurable, Trackable):
                 "simulation_time": self.time,
                 "total_time": self.total_time,
                 "time_step": self.time_step,
-                "simulation_index": self.simulation_index
+                "simulation_index": self.simulation_index,
+                "has_run": self.has_run
             }
             with open(os.path.join(histories_dir, "metadata.json"), 'w') as f:
                 json.dump(history_metadata, f, indent=4)

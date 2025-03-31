@@ -182,7 +182,8 @@ class SimulationSuite:
                 "hash": sim_hash,
                 "display_name": sim.display_name,
                 "index": sim.simulation_index,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")  # Current time for in-memory sims
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),  # Current time for in-memory sims
+                "has_run": sim.has_run
             })
         
         # Then check the filesystem for any we don't have in memory
@@ -208,7 +209,8 @@ class SimulationSuite:
                             "hash": item,
                             "display_name": simulation.get("display_name", "Unknown"),
                             "index": metadata.get("index", 0),
-                            "timestamp": metadata.get("timestamp", "Unknown")
+                            "timestamp": metadata.get("timestamp", "Unknown"),
+                            "has_run": metadata.get("has_run", False)
                         })
                     except Exception as e:
                         print(f"Warning: Failed to read config for {item}: {str(e)}")
@@ -276,4 +278,47 @@ class SimulationSuite:
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=4)
         except Exception as e:
-            print(f"Warning: Failed to save suite configuration: {str(e)}") 
+            print(f"Warning: Failed to save suite configuration: {str(e)}")
+    
+    def run_all_unrun(self):
+        """
+        Run all simulations in the suite that haven't been run yet.
+        
+        Returns:
+            dict: A dictionary mapping simulation hashes to their result status (True for success, Exception for failure)
+        """
+        results = {}
+        
+        print(f"Running all unrun simulations in suite '{self.suite_name}'...")
+        
+        # First, make sure all simulations are loaded
+        all_sims = self.list_simulations()
+        sims_to_run = []
+        
+        for sim_data in all_sims:
+            sim_hash = sim_data["hash"]
+            if not sim_data.get("has_run", False):
+                simulation = self.get_simulation(sim_hash)
+                if simulation:
+                    sims_to_run.append((sim_hash, simulation))
+        
+        if not sims_to_run:
+            print("No unrun simulations found in the suite.")
+            return results
+            
+        print(f"Found {len(sims_to_run)} simulation(s) to run.")
+        
+        # Run each simulation
+        for sim_hash, simulation in sims_to_run:
+            try:
+                print(f"Running simulation '{simulation.display_name}' (hash: {sim_hash})...")
+                simulation.run()
+                self.save_simulation(simulation)
+                results[sim_hash] = True
+                print(f"Simulation '{simulation.display_name}' completed successfully.")
+            except Exception as e:
+                results[sim_hash] = e
+                print(f"Error running simulation '{simulation.display_name}': {str(e)}")
+        
+        print(f"Completed running {len(results)} simulation(s).")
+        return results 

@@ -1,9 +1,10 @@
 {
     "metadata": {
         "version": "1.0",
-        "timestamp": "2025-03-31 19:20:22",
+        "timestamp": "2025-03-31 20:28:02",
         "hash": "deb80996827c5d2802576d6030740dff84052798f49deb5ea8a50eec6def448a",
-        "index": 3
+        "index": 3,
+        "has_run": false
     },
     "simulation": {
         "display_name": "ReloadSim3",

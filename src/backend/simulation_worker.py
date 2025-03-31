@@ -25,4 +25,7 @@ class SimulationWorker(QObject):
                 self.progressChanged.emit(progress)
                 # Progress is shown in the GUI, no need for terminal output
         
+        # Set the has_run flag to True when simulation completes
+        self.simulation.has_run = True
+        
         self.finished.emit(self.simulation)

@@ -47,5 +47,6 @@
     "simulation_time": 0.0,
     "total_time": 10.0,
     "time_step": 0.01,
-    "simulation_index": 2
+    "simulation_index": 2,
+    "has_run": false
 }
