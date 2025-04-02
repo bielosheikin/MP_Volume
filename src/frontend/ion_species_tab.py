@@ -103,3 +103,28 @@ class IonSpeciesTab(QWidget):
                 return None
         
         return ion_species
+
+    def set_data(self, data):
+        """
+        Set the table with the given ion species data.
+        
+        Args:
+            data: Dictionary mapping ion species names to their properties
+        """
+        # Clear existing entries
+        self.table.blockSignals(True)  # Block signals during batch update
+        self.table.setRowCount(0)  # Clear all rows
+        
+        # Add rows for each ion species
+        for name, properties in data.items():
+            self.add_ion_row(
+                name,
+                properties.get("init_vesicle_conc", 0.0),
+                properties.get("exterior_conc", 0.0),
+                properties.get("elementary_charge", 0)
+            )
+        
+        self.table.blockSignals(False)  # Unblock signals
+        
+        # Emit signal that species have been updated
+        self.ion_species_updated.emit()

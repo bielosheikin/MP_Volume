@@ -25,6 +25,24 @@ class SimulationParamsTab(QWidget):
         layout.addWidget(self.run_button)
 
         self.setLayout(layout)
+        
+    def set_data(self, data):
+        """
+        Set the simulation parameters from loaded data
+        
+        Parameters:
+        -----------
+        data : dict
+            Dictionary containing simulation parameters
+            - time_step: time step for the simulation
+            - total_time: total simulation time
+            - display_name: optional display name
+        """
+        if "time_step" in data:
+            self.time_step.setValue(data["time_step"])
+        
+        if "total_time" in data:
+            self.total_time.setValue(data["total_time"])
 
     def get_data(self):
         # Validate parameters before returning

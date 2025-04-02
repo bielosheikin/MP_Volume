@@ -59,3 +59,27 @@ class VesicleTab(QWidget):
                 "pH": default_pH,
             }
         }
+
+    def set_data(self, data):
+        """
+        Set the input fields with the given data.
+        
+        Args:
+            data: Dictionary containing vesicle_params and exterior_params
+        """
+        vesicle_params = data.get("vesicle_params", {})
+        exterior_params = data.get("exterior_params", {})
+        
+        # Set vesicle parameters
+        if "init_radius" in vesicle_params:
+            self.init_radius.setValue(vesicle_params["init_radius"])
+        
+        if "init_voltage" in vesicle_params:
+            self.init_voltage.setValue(vesicle_params["init_voltage"])
+        
+        if "init_pH" in vesicle_params:
+            self.init_pH.setValue(vesicle_params["init_pH"])
+        
+        # Set exterior parameters
+        if "pH" in exterior_params:
+            self.default_pH.setValue(exterior_params["pH"])

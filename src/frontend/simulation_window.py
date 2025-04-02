@@ -148,13 +148,8 @@ class SimulationWindow(QMainWindow):
         try:
             # Populate vesicle tab
             vesicle_data = {
-                "vesicle_params": {
-                    "volume": self.simulation.config.vesicle_volume,
-                    "gating_charge": self.simulation.config.vesicle_gating_charge
-                },
-                "exterior_params": {
-                    "volume": self.simulation.config.exterior_volume
-                }
+                "vesicle_params": self.simulation.config.vesicle_params,
+                "exterior_params": self.simulation.config.exterior_params
             }
             self.vesicle_tab.set_data(vesicle_data)
             
@@ -179,13 +174,23 @@ class SimulationWindow(QMainWindow):
                     **channel.config.to_dict()
                 }
             
-            # Extract ion channel links
+            # Extract ion channel links from the IonChannelsLink object
             ion_channel_links_data = {}
-            for link in self.simulation.config.ion_channel_links:
-                ion_channel_links_data[link.config.channel_name] = {
-                    "primary_ion": link.config.primary_species_name,
-                    "secondary_ions": link.config.secondary_species_names
-                }
+            # Get the links dictionary from the IonChannelsLink object
+            links_dict = self.simulation.config.ion_channel_links.get_links()
+            
+            # Process each primary ion and its associated channels
+            for primary_ion, channel_links in links_dict.items():
+                for channel_name, secondary_ion in channel_links:
+                    if channel_name not in ion_channel_links_data:
+                        ion_channel_links_data[channel_name] = {
+                            "primary_ion": primary_ion,
+                            "secondary_ions": []
+                        }
+                    
+                    # Add secondary ion if it exists
+                    if secondary_ion:
+                        ion_channel_links_data[channel_name]["secondary_ions"].append(secondary_ion)
             
             self.channels_tab.set_data(channel_data, ion_channel_links_data)
             
@@ -193,15 +198,16 @@ class SimulationWindow(QMainWindow):
             sim_params = {
                 "time_step": self.simulation.config.time_step,
                 "total_time": self.simulation.config.total_time,
-                "display_name": self.simulation.config.display_name
+                "display_name": self.simulation.config.display_name if hasattr(self.simulation.config, "display_name") else (self.simulation.display_name if hasattr(self.simulation, "display_name") else "")
             }
             self.simulation_tab.set_data(sim_params)
             
         except Exception as e:
+            import traceback
             QMessageBox.warning(
                 self,
                 "Error Loading Simulation",
-                f"Could not fully load simulation data: {str(e)}"
+                f"Could not fully load simulation data: {str(e)}\n\n{traceback.format_exc()}"
             )
     
     def get_simulation_data(self) -> Optional[Dict[str, Any]]:

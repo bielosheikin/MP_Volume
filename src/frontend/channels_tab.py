@@ -651,3 +651,51 @@ class ChannelsTab(QWidget):
         # Remove parameters from dictionary if they exist
         if channel_name in self.channel_parameters:
             del self.channel_parameters[channel_name]
+            
+    def set_data(self, channels_data, ion_channel_links_data=None):
+        """
+        Populate the channels table with existing data from a simulation
+        
+        Args:
+            channels_data: Dictionary mapping channel names to their parameter dictionaries
+            ion_channel_links_data: Optional dictionary containing link information between ions and channels
+        """
+        # Clear the existing table
+        while self.table.rowCount() > 0:
+            self.table.removeRow(0)
+            
+        # Clear existing parameters
+        self.channel_parameters = {}
+        
+        if not channels_data:
+            return
+            
+        # Block signals during updates
+        self.table.blockSignals(True)
+        
+        # Add each channel to the table
+        for channel_name, params in channels_data.items():
+            primary_ion = params.get('allowed_primary_ion', '')
+            secondary_ion = params.get('allowed_secondary_ion', '')
+            
+            # Add the row
+            self.add_channel_row(channel_name, primary_ion, secondary_ion, params)
+        
+        # Reset and build ion channel links if provided
+        if ion_channel_links_data:
+            self.ion_channel_links.clear_links()
+            for channel_name, link_data in ion_channel_links_data.items():
+                primary_ion = link_data.get('primary_ion', '')
+                secondary_ions = link_data.get('secondary_ions', [])
+                
+                if primary_ion and channel_name:
+                    for secondary_ion in secondary_ions if secondary_ions else [None]:
+                        self.ion_channel_links.add_link(
+                            primary_ion, channel_name, secondary_species_name=secondary_ion
+                        )
+        
+        # Unblock signals
+        self.table.blockSignals(False)
+        
+        # Update the table
+        self.table.viewport().update()
