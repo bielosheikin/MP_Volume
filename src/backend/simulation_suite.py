@@ -286,7 +286,7 @@ class SimulationSuite:
                 {
                     "hash": sim.config.to_sha256_str(),
                     "display_name": sim.display_name,
-                    "index": sim.simulation_index,
+                    "index": sim.simulation_index,  # Use the simulation's actual index
                     "has_run": sim.has_run
                 }
                 for sim in self.simulations

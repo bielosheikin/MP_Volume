@@ -317,13 +317,27 @@ class Simulation(Configurable, Trackable):
 
         self.time += self.time_step
 
-    def run(self):            
+    def run(self, progress_callback=None):            
+        """
+        Run the simulation for the configured number of iterations.
         
+        Args:
+            progress_callback (function, optional): A callback function that accepts a percentage value (0-100)
+                                                to report simulation progress.
+                                                
+        Returns:
+            HistoriesStorage: The histories object containing all simulation data
+        """
         self.set_ion_amounts()
         self.get_unaccounted_ion_amount()
 
         for iter_idx in range(self.iter_num):
             self.run_one_iteration()
+            
+            # Report progress if a callback is provided
+            if progress_callback and self.iter_num > 0:
+                progress_percent = 100.0 * (iter_idx + 1) / self.iter_num
+                progress_callback(progress_percent)
         
         self.has_run = True
         return self.histories

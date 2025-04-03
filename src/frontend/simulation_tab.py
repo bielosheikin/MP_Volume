@@ -1,9 +1,14 @@
-from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QPushButton, QProgressBar, QMessageBox
+from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QPushButton, QProgressBar, QMessageBox, QLineEdit
 
 class SimulationParamsTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QFormLayout()
+
+        # Add simulation name field
+        self.display_name = QLineEdit()
+        self.display_name.setPlaceholderText("Enter simulation name")
+        layout.addRow("Simulation Name:", self.display_name)
 
         self.time_step = QDoubleSpinBox()
         self.time_step.setDecimals(3)
@@ -21,9 +26,6 @@ class SimulationParamsTab(QWidget):
         self.progress_bar.setValue(0)
         layout.addRow("Progress:", self.progress_bar)
         
-        self.run_button = QPushButton("Run")
-        layout.addWidget(self.run_button)
-
         self.setLayout(layout)
         
     def set_data(self, data):
@@ -43,11 +45,20 @@ class SimulationParamsTab(QWidget):
         
         if "total_time" in data:
             self.total_time.setValue(data["total_time"])
+            
+        if "display_name" in data:
+            self.display_name.setText(data["display_name"])
 
     def get_data(self):
         # Validate parameters before returning
         time_step = self.time_step.value()
         total_time = self.total_time.value()
+        display_name = self.display_name.text().strip()
+        
+        if not display_name:
+            QMessageBox.warning(self, "Missing Information", 
+                               "Please enter a name for the simulation.")
+            return None
         
         if time_step <= 0:
             QMessageBox.warning(self, "Invalid Parameter", 
@@ -69,4 +80,5 @@ class SimulationParamsTab(QWidget):
         return {
             "time_step": time_step,
             "total_time": total_time,
+            "display_name": display_name
         }
