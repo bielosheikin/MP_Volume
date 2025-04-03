@@ -1,20 +1,21 @@
 import os
-from typing import Optional, Dict, List
+import time
+from typing import Dict, List, Optional, Any
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QMessageBox, QTabWidget,
-    QInputDialog, QTextEdit, QListWidget, QListWidgetItem,
-    QSplitter, QFrame, QProgressBar
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QPushButton, QListWidget, QListWidgetItem, QFrame, QSplitter,
+    QMessageBox, QInputDialog, QProgressBar, QMenu, QDialog, QTextEdit,
+    QDialogButtonBox, QFormLayout, QLineEdit, QGridLayout
 )
 from PyQt5.QtGui import QFont
 
-from ..backend.simulation_suite import SimulationSuite
 from ..backend.simulation import Simulation
-from .simulation_manager import SimulationManager
-
+from ..backend.simulation_suite import SimulationSuite
+from ..app_settings import DEBUG_LOGGING
 from .simulation_window import SimulationWindow
+from .simulation_manager import SimulationManager
 
 
 class SuiteWindow(QMainWindow):

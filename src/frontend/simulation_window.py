@@ -14,6 +14,7 @@ from ..backend.simulation_suite import SimulationSuite
 from ..backend.ion_species import IonSpecies
 from ..backend.ion_channels import IonChannel
 from ..backend.ion_and_channels_link import IonChannelsLink
+from ..app_settings import DEBUG_LOGGING
 
 from .vesicle_tab import VesicleTab
 from .ion_species_tab import IonSpeciesTab

@@ -28,3 +28,11 @@ env/
 *.npy
 *.json
 *.pickle
+**/simulation_suites/**
+
+# Test files
+**/tests/**
+
+# Simulation files and results
+**/histories/
+**/simulation_data/

@@ -1,7 +1,14 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QComboBox, QHeaderView, QMessageBox, QHBoxLayout
+import sys
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+    QPushButton, QComboBox, QHeaderView, QMessageBox, QLabel, 
+    QFrame, QDialog, QFormLayout, QLineEdit, QDoubleSpinBox, 
+    QCheckBox, QDialogButtonBox, QSpinBox, QGroupBox
+)
 from PyQt5.QtCore import Qt
-
 from ..backend.default_channels import default_channels
+from ..app_settings import DEBUG_LOGGING
+
 from ..backend.ion_and_channels_link import IonChannelsLink
 from .utils.parameter_editor import ParameterEditorDialog
 
@@ -121,13 +128,15 @@ class ChannelsTab(QWidget):
         for ion_name, channel_list in links.items():
             # Skip if the ion is not in our available species
             if ion_name not in self.available_ion_species:
-                print(f"Skipping channels for ion '{ion_name}' as it's not in available species")
+                if DEBUG_LOGGING:
+                    print(f"Skipping channels for ion '{ion_name}' as it's not in available species")
                 continue
                 
             for channel_name, secondary_ion in channel_list:
                 # Skip if secondary ion is not in available species (but allow empty secondary ion)
                 if secondary_ion and secondary_ion not in self.available_ion_species:
-                    print(f"Skipping channel '{channel_name}' as secondary ion '{secondary_ion}' is not in available species")
+                    if DEBUG_LOGGING:
+                        print(f"Skipping channel '{channel_name}' as secondary ion '{secondary_ion}' is not in available species")
                     continue
                     
                 channel_config = default_channels[channel_name]
@@ -215,7 +224,8 @@ class ChannelsTab(QWidget):
                 primary_combo.setCurrentIndex(0)
             # If primary ion is not in available species but is not empty, print warning
             elif primary_ion:
-                print(f"Warning: Primary ion '{primary_ion}' for channel '{display_name}' is not in available ion species list")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Primary ion '{primary_ion}' for channel '{display_name}' is not in available ion species list")
                 
         self.table.setCellWidget(row, 1, primary_combo)
         
@@ -231,7 +241,8 @@ class ChannelsTab(QWidget):
                 secondary_combo.setCurrentIndex(0)  # Select empty option
             # If secondary ion is not in available species but is not empty, print warning
             if secondary_ion and secondary_ion not in self.available_ion_species and secondary_ion != "":
-                print(f"Warning: Secondary ion '{secondary_ion}' for channel '{display_name}' is not in available ion species list")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Secondary ion '{secondary_ion}' for channel '{display_name}' is not in available ion species list")
         
         self.table.setCellWidget(row, 2, secondary_combo)
         
@@ -323,8 +334,9 @@ class ChannelsTab(QWidget):
                 edit_button = None
                 
             if column == 1:  # Primary ion
-                # Print debug info to see when this is triggered
-                print(f"Primary ion changed for channel '{channel_name}': from '{parameters.get('allowed_primary_ion')}' to '{text}'")
+                # Only log when debug is enabled
+                if DEBUG_LOGGING:
+                    print(f"Primary ion changed for channel '{channel_name}': from '{parameters.get('allowed_primary_ion')}' to '{text}'")
                 
                 # Update the parameter - ensure it's None if text is empty
                 parameters['allowed_primary_ion'] = text if text else None
@@ -338,8 +350,9 @@ class ChannelsTab(QWidget):
                         edit_button.setToolTip("")
                     
             elif column == 2:  # Secondary ion
-                # Print debug info to see when this is triggered
-                print(f"Secondary ion changed for channel '{channel_name}': from '{parameters.get('allowed_secondary_ion')}' to '{text}'")
+                # Only log when debug is enabled
+                if DEBUG_LOGGING:
+                    print(f"Secondary ion changed for channel '{channel_name}': from '{parameters.get('allowed_secondary_ion')}' to '{text}'")
                 
                 # Update the parameter - ensure it's None if text is empty
                 parameters['allowed_secondary_ion'] = text if text else None
@@ -417,16 +430,17 @@ class ChannelsTab(QWidget):
             self.update_parameters_display(row, updated_parameters)
             
             # Print parameters for debugging
-            print(f"Updated parameters for {channel_name}:")
-            for key, value in updated_parameters.items():
-                if key == 'conductance':
-                    print(f"  {key}: {value}")
-                elif key == 'dependence_type':
-                    print(f"  {key}: {value}")
-                elif key == 'channel_type' and updated_parameters.get('dependence_type') in ['pH', 'voltage_and_pH']:
-                    print(f"  {key}: {value}")
-                elif key in ['allowed_primary_ion', 'allowed_secondary_ion'] and value is not None:
-                    print(f"  {key}: {value}")
+            if DEBUG_LOGGING:
+                print(f"Updated parameters for {channel_name}:")
+                for key, value in updated_parameters.items():
+                    if key == 'conductance':
+                        print(f"  {key}: {value}")
+                    elif key == 'dependence_type':
+                        print(f"  {key}: {value}")
+                    elif key == 'channel_type' and updated_parameters.get('dependence_type') in ['pH', 'voltage_and_pH']:
+                        print(f"  {key}: {value}")
+                    elif key in ['allowed_primary_ion', 'allowed_secondary_ion'] and value is not None:
+                        print(f"  {key}: {value}")
 
     def add_channel(self):
         # Create a new row with a temporary name and default parameters
@@ -454,7 +468,8 @@ class ChannelsTab(QWidget):
         row = self.add_channel_row(new_channel_name, "", "", default_params)
         
         # Let the user know they should set ion species and then edit parameters
-        print("New channel added. Please select primary ion species, then click 'Edit' to configure parameters.")
+        if DEBUG_LOGGING:
+            print("New channel added. Please select primary ion species, then click 'Edit' to configure parameters.")
         
         # Make sure the edit button is disabled until a primary ion is selected
         button_widget = self.table.cellWidget(row, 3)
@@ -468,7 +483,8 @@ class ChannelsTab(QWidget):
         self.ion_channel_links.clear_links()
         channels = {}
 
-        print("\nProcessing channels data:")
+        if DEBUG_LOGGING:
+            print("\nProcessing channels data:")
         for row in range(self.table.rowCount()):
             channel_name = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
             
@@ -483,21 +499,25 @@ class ChannelsTab(QWidget):
             secondary_ion = secondary_combo.currentText() if secondary_combo else ""
 
             if not channel_name or not primary_ion:  # Skip incomplete rows
-                print(f"WARNING: Channel '{channel_name}' has no primary ion species set. It will be ignored in the simulation.")
+                if DEBUG_LOGGING:
+                    print(f"WARNING: Channel '{channel_name}' has no primary ion species set. It will be ignored in the simulation.")
                 continue
 
             # Verify primary ion is in available species
             if primary_ion not in self.available_ion_species:
-                print(f"WARNING: Primary ion '{primary_ion}' for channel '{channel_name}' is not in available ion species. This channel will be ignored.")
+                if DEBUG_LOGGING:
+                    print(f"WARNING: Primary ion '{primary_ion}' for channel '{channel_name}' is not in available ion species. This channel will be ignored.")
                 continue
                 
             # Verify secondary ion is in available species (if specified)
             if secondary_ion and secondary_ion not in self.available_ion_species:
-                print(f"WARNING: Secondary ion '{secondary_ion}' for channel '{channel_name}' is not in available ion species. This channel will be ignored.")
+                if DEBUG_LOGGING:
+                    print(f"WARNING: Secondary ion '{secondary_ion}' for channel '{channel_name}' is not in available ion species. This channel will be ignored.")
                 continue
 
-            print(f"Processing channel: '{channel_name}' with primary ion '{primary_ion}'" +
-                  (f" and secondary ion '{secondary_ion}'" if secondary_ion else ""))
+            if DEBUG_LOGGING:
+                print(f"Processing channel: '{channel_name}' with primary ion '{primary_ion}'" +
+                      (f" and secondary ion '{secondary_ion}'" if secondary_ion else ""))
 
             # Get the user-edited parameters first
             parameters = self.channel_parameters.get(channel_name, {}).copy()
@@ -506,11 +526,13 @@ class ChannelsTab(QWidget):
             if not parameters and channel_name in default_channels:
                 default_channel = default_channels[channel_name]
                 parameters = self.extract_config_parameters(default_channel)
-                print(f"Using default settings for {channel_name}")
+                if DEBUG_LOGGING:
+                    print(f"Using default settings for {channel_name}")
             
             # Ensure we have parameters
             if not parameters:
-                print(f"WARNING: No parameters found for channel '{channel_name}'. Using defaults.")
+                if DEBUG_LOGGING:
+                    print(f"WARNING: No parameters found for channel '{channel_name}'. Using defaults.")
                 parameters = {
                     'conductance': 1e-7,  # Default to a small non-zero conductance
                     'channel_type': None,  # No default channel type
@@ -533,7 +555,8 @@ class ChannelsTab(QWidget):
             
             # Log the conductance for debugging
             conductance = parameters.get('conductance', 0.0)
-            print(f"Channel '{channel_name}' conductance: {conductance}")
+            if DEBUG_LOGGING:
+                print(f"Channel '{channel_name}' conductance: {conductance}")
                         
             # Create a fresh parameters dict with proper types and default values
             processed_parameters = {
@@ -558,7 +581,8 @@ class ChannelsTab(QWidget):
             
             # Check if conductance is zero and warn the user
             if processed_parameters['conductance'] == 0.0:
-                print(f"WARNING: Channel '{channel_name}' has a conductance of 0.0, which means it will not affect the simulation!")
+                if DEBUG_LOGGING:
+                    print(f"WARNING: Channel '{channel_name}' has a conductance of 0.0, which means it will not affect the simulation!")
             
             # Handle dependency parameters based on dependency type
             if processed_parameters['dependence_type'] in ['voltage', 'voltage_and_pH']:
@@ -588,27 +612,30 @@ class ChannelsTab(QWidget):
                 processed_parameters['half_act_time'] = float(parameters.get('half_act_time', 0.0))
                 
             # Print significant parameters for debugging
-            print(f"Final parameters for {channel_name}:")
-            print(f"  conductance: {processed_parameters['conductance']}")
-            print(f"  dependence_type: {processed_parameters['dependence_type']}")
-            # Only print channel_type if dependence_type is set to pH or voltage_and_pH
-            if processed_parameters['channel_type'] and processed_parameters['dependence_type'] in ['pH', 'voltage_and_pH']:
-                print(f"  channel_type: {processed_parameters['channel_type']}")
-            print(f"  primary_ion: {primary_ion}, exponent: {processed_parameters['primary_exponent']}")
-            if secondary_ion:
-                print(f"  secondary_ion: {secondary_ion}, exponent: {processed_parameters['secondary_exponent']}")
-            else:
-                print("  no secondary ion")
+            if DEBUG_LOGGING:
+                print(f"Final parameters for {channel_name}:")
+                print(f"  conductance: {processed_parameters['conductance']}")
+                print(f"  dependence_type: {processed_parameters['dependence_type']}")
+                # Only print channel_type if dependence_type is set to pH or voltage_and_pH
+                if processed_parameters['channel_type'] and processed_parameters['dependence_type'] in ['pH', 'voltage_and_pH']:
+                    print(f"  channel_type: {processed_parameters['channel_type']}")
+                print(f"  primary_ion: {primary_ion}, exponent: {processed_parameters['primary_exponent']}")
+                if secondary_ion:
+                    print(f"  secondary_ion: {secondary_ion}, exponent: {processed_parameters['secondary_exponent']}")
+                else:
+                    print("  no secondary ion")
 
             channels[channel_name] = processed_parameters
-            print(f"Adding link: {primary_ion} → {channel_name}" + (f" → {secondary_ion}" if secondary_ion else ""))
+            if DEBUG_LOGGING:
+                print(f"Adding link: {primary_ion} → {channel_name}" + (f" → {secondary_ion}" if secondary_ion else ""))
             self.ion_channel_links.add_link(
                 primary_ion, channel_name, secondary_species_name=secondary_ion or None
             )
 
         # Only print the total number of links instead of the full dictionary
         total_links = sum(len(links) for links in self.ion_channel_links.get_links().values())
-        print(f"Total links: {total_links}")
+        if DEBUG_LOGGING:
+            print(f"Total links: {total_links}")
         return channels, self.ion_channel_links
 
     def update_parameters_display(self, row, parameters):

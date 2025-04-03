@@ -6,8 +6,8 @@ import time
 import shutil
 from pathlib import Path
 
-from .simulation import Simulation
-
+from .simulation import Simulation, SAVE_FREQUENCY
+from ..app_settings import DEBUG_LOGGING
 
 class SimulationSuite:
     """
@@ -58,7 +58,8 @@ class SimulationSuite:
                 if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "simulation.pickle")):
                     self._load_simulation(item)
         except Exception as e:
-            print(f"Warning: Failed to load existing simulations: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to load existing simulations: {str(e)}")
     
     def _load_simulation(self, sim_hash: str) -> Optional[Simulation]:
         """
@@ -74,7 +75,8 @@ class SimulationSuite:
         pickle_path = os.path.join(sim_path, "simulation.pickle")
         
         if not os.path.exists(pickle_path):
-            print(f"Warning: No simulation.pickle found in {sim_path}")
+            if DEBUG_LOGGING:
+                print(f"Warning: No simulation.pickle found in {sim_path}")
             return None
             
         try:
@@ -84,7 +86,8 @@ class SimulationSuite:
                 simulation.simulations_path = self.suite_path
                 return simulation
         except Exception as e:
-            print(f"Warning: Failed to load simulation from {pickle_path}: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to load simulation from {pickle_path}: {str(e)}")
             return None
     
     def add_simulation(self, simulation: Simulation) -> bool:
@@ -132,14 +135,16 @@ class SimulationSuite:
         # Check if the simulation exists in the filesystem
         sim_path = os.path.join(self.suite_path, simulation_hash)
         if not os.path.exists(sim_path):
-            print(f"Warning: No simulation with hash {simulation_hash} found in the suite.")
+            if DEBUG_LOGGING:
+                print(f"Warning: No simulation with hash {simulation_hash} found in the suite.")
             return False
             
         # Remove from filesystem
         try:
             shutil.rmtree(sim_path)
         except Exception as e:
-            print(f"Warning: Failed to remove simulation directory: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to remove simulation directory: {str(e)}")
             return False
         
         # Remove from our internal list
@@ -242,6 +247,13 @@ class SimulationSuite:
         
         # Set the right path and save
         simulation.simulations_path = self.suite_path
+        
+        # If SAVE_FREQUENCY is 0 and simulation has not been run, don't save it yet
+        if SAVE_FREQUENCY == 0 and not simulation.has_run:
+            if DEBUG_LOGGING:
+                print(f"Skipping save for unrun simulation with SAVE_FREQUENCY=0")
+            return os.path.join(self.suite_path, sim_hash)
+        
         return simulation.save_simulation()
     
     def load_simulation(self, simulation_hash: str) -> Optional[Simulation]:
@@ -274,7 +286,8 @@ class SimulationSuite:
                     creation_date = existing_config.get("creation_date", creation_date)
                     description = existing_config.get("description", description)
             except Exception as e:
-                print(f"Warning: Failed to read existing config: {str(e)}")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Failed to read existing config: {str(e)}")
         
         # Prepare the configuration data
         config = {
@@ -298,7 +311,8 @@ class SimulationSuite:
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=4)
         except Exception as e:
-            print(f"Warning: Failed to save suite config: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to save suite config: {str(e)}")
     
     def run_all_unrun(self):
         """
@@ -309,7 +323,8 @@ class SimulationSuite:
         """
         results = {}
         
-        print(f"Running all unrun simulations in suite '{self.suite_name}'...")
+        if DEBUG_LOGGING:
+            print(f"Running all unrun simulations in suite '{self.suite_name}'...")
         
         # First, make sure all simulations are loaded
         all_sims = self.list_simulations()
@@ -323,24 +338,30 @@ class SimulationSuite:
                     sims_to_run.append((sim_hash, simulation))
         
         if not sims_to_run:
-            print("No unrun simulations found in the suite.")
+            if DEBUG_LOGGING:
+                print("No unrun simulations found in the suite.")
             return results
             
-        print(f"Found {len(sims_to_run)} simulation(s) to run.")
+        if DEBUG_LOGGING:
+            print(f"Found {len(sims_to_run)} simulation(s) to run.")
         
         # Run each simulation
         for sim_hash, simulation in sims_to_run:
             try:
-                print(f"Running simulation '{simulation.display_name}' (hash: {sim_hash})...")
+                if DEBUG_LOGGING:
+                    print(f"Running simulation '{simulation.display_name}' (hash: {sim_hash})...")
                 simulation.run()
                 self.save_simulation(simulation)
                 results[sim_hash] = True
-                print(f"Simulation '{simulation.display_name}' completed successfully.")
+                if DEBUG_LOGGING:
+                    print(f"Simulation '{simulation.display_name}' completed successfully.")
             except Exception as e:
                 results[sim_hash] = e
-                print(f"Error running simulation '{simulation.display_name}': {str(e)}")
+                if DEBUG_LOGGING:
+                    print(f"Error running simulation '{simulation.display_name}': {str(e)}")
         
-        print(f"Completed running {len(results)} simulation(s).")
+        if DEBUG_LOGGING:
+            print(f"Completed running {len(results)} simulation(s).")
         return results
     
     def set_description(self, description: str) -> bool:
@@ -377,7 +398,8 @@ class SimulationSuite:
                 
             return True
         except Exception as e:
-            print(f"Warning: Failed to update suite description: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to update suite description: {str(e)}")
             return False
     
     def get_description(self) -> str:
@@ -397,7 +419,8 @@ class SimulationSuite:
                 config = json.load(f)
             return config.get("description", "")
         except Exception as e:
-            print(f"Warning: Failed to read suite description: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to read suite description: {str(e)}")
             return ""
     
     def get_metadata(self) -> Dict[str, Any]:
@@ -435,6 +458,7 @@ class SimulationSuite:
                 if not self.simulations and "simulations" in config:
                     metadata["simulation_count"] = len(config["simulations"])
             except Exception as e:
-                print(f"Warning: Failed to read suite metadata: {str(e)}")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Failed to read suite metadata: {str(e)}")
         
         return metadata 

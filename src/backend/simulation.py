@@ -10,14 +10,15 @@ from .default_ion_species import default_ion_species
 from .ion_and_channels_link import IonChannelsLink
 from .histories_storage import HistoriesStorage
 from math import log10
-from ..nestconf import Configurable
-from typing import Optional, Dict, Any
+from ..nestconf.configurable import Configurable
+from typing import Optional, Dict, Any, List, Union, Tuple, Set
 import os
 import json
 import pickle
 import numpy as np
 import time
-
+from pathlib import Path
+from ..app_settings import DEBUG_LOGGING, SAVE_FREQUENCY
 
 class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
@@ -349,7 +350,7 @@ class Simulation(Configurable, Trackable):
         
         Saves:
         - config.json: The simulation configuration in JSON format
-        - config.pickle: The simulation configuration in pickle format (if possible)
+        - simulation.pickle: The simulation object in pickle format
         - histories/*.npy: Each history value as a separate numpy file in the 'histories' subdirectory
         
         Returns:
@@ -379,9 +380,11 @@ class Simulation(Configurable, Trackable):
                     existing_index = config_data.get("metadata", {}).get("index")
                     if existing_index is not None:
                         self.simulation_index = existing_index
-                        print(f"Updating existing simulation with index {existing_index}")
+                        if DEBUG_LOGGING:
+                            print(f"Updating existing simulation with index {existing_index}")
             except Exception as e:
-                print(f"Warning: Failed to load existing simulation index: {str(e)}")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Failed to load existing simulation index: {str(e)}")
         
         # Only update the index if this is a new simulation
         if not simulation_exists:
@@ -413,7 +416,8 @@ class Simulation(Configurable, Trackable):
             config_json_path = os.path.join(simulation_dir, "config.json")
             with open(config_json_path, 'w') as f:
                 json.dump(config_with_metadata, f, indent=4, default=str)
-            print(f"Configuration saved to JSON: {config_json_path}")
+            if DEBUG_LOGGING:
+                print(f"Configuration saved to JSON: {config_json_path}")
             
             # Also save the raw simulation configuration
             raw_config_path = os.path.join(simulation_dir, "raw_config.json")
@@ -421,7 +425,8 @@ class Simulation(Configurable, Trackable):
                 json.dump(self.config.to_dict(), f, indent=4, default=str)
                 
         except Exception as e:
-            print(f"Warning: Failed to save configuration as JSON: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to save configuration as JSON: {str(e)}")
         
         # Extract the essential data to save (including all primitive types)
         config_data = {
@@ -452,18 +457,22 @@ class Simulation(Configurable, Trackable):
             pickle_path = os.path.join(simulation_dir, "simulation.pickle")
             with open(pickle_path, 'wb') as f:
                 pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
-            print(f"Full simulation object saved to pickle: {pickle_path}")
+            if DEBUG_LOGGING:
+                print(f"Full simulation object saved to pickle: {pickle_path}")
         except Exception as e:
-            print(f"Warning: Failed to pickle full simulation object: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to pickle full simulation object: {str(e)}")
             
             # Fallback: save just the key config data
             try:
                 config_pickle_path = os.path.join(simulation_dir, "config.pickle")
                 with open(config_pickle_path, 'wb') as f:
                     pickle.dump(config_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                print(f"Configuration data saved to pickle: {config_pickle_path}")
+                if DEBUG_LOGGING:
+                    print(f"Configuration data saved to pickle: {config_pickle_path}")
             except Exception as e:
-                print(f"Warning: Failed to save configuration as pickle: {str(e)}")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Failed to save configuration as pickle: {str(e)}")
         
         # Save each history value as a separate numpy file
         histories = self.histories.get_histories()
@@ -474,7 +483,8 @@ class Simulation(Configurable, Trackable):
                 np.save(history_file, np.array(values))
                 histories_saved += 1
             except Exception as e:
-                print(f"Warning: Failed to save history for {key}: {str(e)}")
+                if DEBUG_LOGGING:
+                    print(f"Warning: Failed to save history for {key}: {str(e)}")
         
         # Save a metadata file for the histories
         try:
@@ -490,12 +500,14 @@ class Simulation(Configurable, Trackable):
             with open(os.path.join(histories_dir, "metadata.json"), 'w') as f:
                 json.dump(history_metadata, f, indent=4)
         except Exception as e:
-            print(f"Warning: Failed to save history metadata: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to save history metadata: {str(e)}")
         
         # Message differs based on whether this is a new or existing simulation
-        if simulation_exists:
-            print(f"Simulation updated at: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
-        else:
-            print(f"New simulation saved to: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
+        if DEBUG_LOGGING:
+            if simulation_exists:
+                print(f"Simulation updated at: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
+            else:
+                print(f"New simulation saved to: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
         
         return simulation_dir

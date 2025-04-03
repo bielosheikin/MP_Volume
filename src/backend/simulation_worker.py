@@ -2,6 +2,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 import time
 
 from .simulation import Simulation
+from ..app_settings import DEBUG_LOGGING, SAVE_FREQUENCY
 
 class SimulationWorker(QObject):
     """
@@ -40,6 +41,7 @@ class SimulationWorker(QObject):
             self.simulation.set_ion_amounts()
             self.simulation.get_unaccounted_ion_amount()
             last_progress_update = time.time()
+            last_save_iteration = 0
 
             # Run all iterations
             for i in range(total_iterations):
@@ -50,6 +52,23 @@ class SimulationWorker(QObject):
                     
                 # Run one iteration of the simulation
                 self.simulation.run_one_iteration()
+
+                # Save intermediate results based on SAVE_FREQUENCY setting
+                # (only if we have a path to save to)
+                if (SAVE_FREQUENCY > 0 and 
+                    self.simulation.simulations_path and
+                    (i - last_save_iteration) >= SAVE_FREQUENCY):
+                    if DEBUG_LOGGING:
+                        print(f"Saving intermediate results at iteration {i+1}/{total_iterations}")
+                    # Temporarily mark as run for saving purposes
+                    original_has_run = self.simulation.has_run
+                    self.simulation.has_run = True
+                    try:
+                        self.simulation.save_simulation()
+                    finally:
+                        # Restore the original has_run status
+                        self.simulation.has_run = original_has_run
+                    last_save_iteration = i
 
                 # Update progress and emit signals (limited to avoid UI flooding)
                 # Update at most 10 times per second
@@ -66,6 +85,9 @@ class SimulationWorker(QObject):
                 
                 # Mark simulation as run
                 self.simulation.has_run = True
+                
+                # Final save will happen when suite_window.py calls save_simulation
+                # after receiving the finished signal
                 
                 # Emit finished signal with the updated simulation
                 self.finished.emit(self.simulation)
