@@ -23,3 +23,8 @@ env/
 # Local development settings
 .env
 .env.local 
+
+# Data files
+*.npy
+*.json
+*.pickle
