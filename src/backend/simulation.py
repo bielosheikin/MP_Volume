@@ -42,7 +42,7 @@ class Simulation(Configurable, Trackable):
         
         # Store the simulations path and index (not part of config)
         self.simulations_path = simulations_path
-        self.simulation_index = 0
+        self.simulation_index = 1  # Initialize to 1 instead of 0
         
         # Track whether this simulation has been run
         self.has_run = False
@@ -106,23 +106,45 @@ class Simulation(Configurable, Trackable):
             self.update_simulation_index()
 
     def update_simulation_index(self):
-        """Update the simulation index based on the number of existing saved simulations."""
+        """Update the simulation index based on existing simulations, ensuring unique indices."""
         if not self.simulations_path or not os.path.exists(self.simulations_path):
             self.simulation_index = 1  # Start indexes from 1
             return
             
-        # Count only directories that contain a config.json file (actual simulation directories)
         try:
-            simulation_count = 0
+            # Get all existing simulation indices from directories with config.json
+            existing_indices = set()
+            
             for d in os.listdir(self.simulations_path):
                 dir_path = os.path.join(self.simulations_path, d)
-                if os.path.isdir(dir_path) and os.path.exists(os.path.join(dir_path, "config.json")):
-                    simulation_count += 1
+                config_path = os.path.join(dir_path, "config.json")
+                
+                if os.path.isdir(dir_path) and os.path.exists(config_path):
+                    try:
+                        with open(config_path, 'r') as f:
+                            config_data = json.load(f)
+                            # Extract the index from metadata
+                            index = config_data.get("metadata", {}).get("index")
+                            if index is not None:
+                                existing_indices.add(index)
+                    except:
+                        # If we can't read the config, just continue
+                        pass
             
-            # Start indexing from 1 (more user-friendly)
-            self.simulation_index = simulation_count + 1
+            # Find the next available index (starting from 1)
+            next_index = 1
+            while next_index in existing_indices:
+                next_index += 1
+                
+            # Set the simulation index to the next available index
+            self.simulation_index = next_index
+            
+            if DEBUG_LOGGING:
+                print(f"Assigned simulation index: {self.simulation_index}")
+                
         except Exception as e:
-            print(f"Warning: Failed to count existing simulations: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Failed to determine next simulation index: {str(e)}")
             self.simulation_index = 1  # Default to 1 if counting fails
 
     def _initialize_vesicle_and_exterior(self):
@@ -370,7 +392,6 @@ class Simulation(Configurable, Trackable):
         simulation_exists = os.path.exists(simulation_dir)
         
         # If the simulation already exists, try to load its index
-        existing_index = None
         if simulation_exists:
             try:
                 config_json_path = os.path.join(simulation_dir, "config.json")
@@ -389,6 +410,14 @@ class Simulation(Configurable, Trackable):
         # Only update the index if this is a new simulation
         if not simulation_exists:
             self.update_simulation_index()
+        
+        # Check if we should skip saving based on SAVE_FREQUENCY
+        # If SAVE_FREQUENCY is 0 and simulation has not been run, don't save
+        # (Suite will handle this case using _force_save_simulation if needed)
+        if SAVE_FREQUENCY == 0 and not self.has_run:
+            if DEBUG_LOGGING:
+                print(f"Skipping save for unrun simulation with SAVE_FREQUENCY=0")
+            return simulation_dir
         
         # Create directories
         os.makedirs(simulation_dir, exist_ok=True)
