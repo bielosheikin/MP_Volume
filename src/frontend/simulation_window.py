@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QTabWidget,
-    QInputDialog, QTextEdit, QDialog, QDialogButtonBox
+    QInputDialog, QTextEdit, QDialog, QDialogButtonBox, QLineEdit
 )
 from PyQt5.QtGui import QFont
 
@@ -36,6 +36,7 @@ class SimulationWindow(QMainWindow):
         self.suite = suite
         self.simulation = simulation
         self.is_new = simulation is None
+        self.just_saved = False  # Flag to track if simulation was just saved
         
         # Set window title based on whether we're creating a new simulation or editing an existing one
         if self.is_new:
@@ -325,11 +326,57 @@ class SimulationWindow(QMainWindow):
                 # Create a new simulation
                 new_simulation = Simulation(**simulation_data)
                 
+                # Check if the name already exists in the suite
+                existing_simulations = self.suite.list_simulations()
+                name_conflicts = [sim for sim in existing_simulations if sim['display_name'] == new_simulation.display_name]
+                
+                if name_conflicts:
+                    # Ask user to confirm overwrite or change name
+                    reply = QMessageBox.question(
+                        self,
+                        "Name Already Exists",
+                        f"A simulation with the name '{new_simulation.display_name}' already exists.\n"
+                        f"Would you like to use a different name?",
+                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                        QMessageBox.Yes
+                    )
+                    
+                    if reply == QMessageBox.Cancel:
+                        return
+                    elif reply == QMessageBox.Yes:
+                        # Ask for a new name
+                        new_name, ok = QInputDialog.getText(
+                            self,
+                            "New Simulation Name",
+                            "Enter a name for the simulation:",
+                            QLineEdit.Normal,
+                            f"{new_simulation.display_name} (new)"
+                        )
+                        
+                        if ok and new_name:
+                            new_simulation.display_name = new_name
+                        else:
+                            # User cancelled the name dialog
+                            return
+                
                 # Add to the suite
-                self.suite.add_simulation(new_simulation)
+                try:
+                    self.suite.add_simulation(new_simulation)
+                except ValueError as e:
+                    # This could happen if a simulation with the same hash already exists
+                    QMessageBox.critical(
+                        self,
+                        "Simulation Error",
+                        f"Could not add simulation: {str(e)}\n\n"
+                        f"A simulation with identical parameters may already exist."
+                    )
+                    return
                 
                 # Save the simulation data to disk
                 sim_path = self.suite.save_simulation(new_simulation)
+                
+                # Set flag to avoid double-save prompt
+                self.just_saved = True
                 
                 QMessageBox.information(
                     self,
@@ -343,37 +390,86 @@ class SimulationWindow(QMainWindow):
                 # Close the window
                 self.close()
             else:
-                # Ask for confirmation before overwriting
+                # We're updating an existing simulation
+                
+                # First check if there are actual changes
+                if not self.has_unsaved_changes():
+                    QMessageBox.information(
+                        self,
+                        "No Changes",
+                        "No changes detected in the simulation parameters."
+                    )
+                    self.close()
+                    return
+                
+                # Ask for confirmation before creating a new simulation
                 reply = QMessageBox.question(
                     self,
                     "Confirm Update",
                     f"Are you sure you want to update the simulation '{self.simulation.display_name}'?\n\n"
-                    f"This will create a new simulation with the updated parameters.",
+                    f"This will create a new simulation with the updated parameters.\n"
+                    f"It's recommended to provide a different name for the new simulation.",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
                 
-                if reply == QMessageBox.Yes:
-                    # Create a new simulation with updated parameters
-                    updated_simulation = Simulation(**simulation_data)
-                    
-                    # Add to the suite
+                if reply != QMessageBox.Yes:
+                    return
+                
+                # Always ask for a new name to avoid confusion
+                original_name = simulation_data['display_name']
+                default_new_name = f"{original_name} (modified)"
+                
+                new_name, ok = QInputDialog.getText(
+                    self,
+                    "New Simulation Name",
+                    "Enter a name for the new simulation:",
+                    QLineEdit.Normal,
+                    default_new_name
+                )
+                
+                if not ok:
+                    # User cancelled the name dialog
+                    return
+                
+                # Update the display name in the simulation data
+                if new_name:
+                    simulation_data['display_name'] = new_name
+                
+                # Create a new simulation with updated parameters
+                updated_simulation = Simulation(**simulation_data)
+                
+                # Check if this exact configuration already exists
+                try:
+                    # Add to the suite (which will check for hash conflicts)
                     self.suite.add_simulation(updated_simulation)
-                    
-                    # Save the simulation data to disk
-                    sim_path = self.suite.save_simulation(updated_simulation)
-                    
-                    QMessageBox.information(
+                except ValueError as e:
+                    # This happens if an identical simulation already exists
+                    QMessageBox.critical(
                         self,
-                        "Simulation Updated",
-                        f"Simulation updated successfully as '{updated_simulation.display_name}'."
+                        "Simulation Error",
+                        f"Could not create updated simulation: {str(e)}\n\n"
+                        f"A simulation with identical parameters may already exist."
                     )
-                    
-                    # Emit signal that a simulation was updated
-                    self.simulation_saved.emit(updated_simulation)
-                    
-                    # Close the window
-                    self.close()
+                    return
+                
+                # Save the simulation data to disk
+                sim_path = self.suite.save_simulation(updated_simulation)
+                
+                # Set flag to avoid double-save prompt
+                self.just_saved = True
+                
+                QMessageBox.information(
+                    self,
+                    "Simulation Updated",
+                    f"Simulation updated successfully as '{updated_simulation.display_name}'."
+                )
+                
+                # Emit signal that a simulation was updated
+                self.simulation_saved.emit(updated_simulation)
+                
+                # Close the window
+                self.close()
         
         except ValueError as e:
             QMessageBox.critical(
@@ -385,25 +481,234 @@ class SimulationWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Unexpected Error",
-                f"An unexpected error occurred: {str(e)}"
+                f"An unexpected error occurred: {str(e)}\n\n"
+                f"Please check the logs for more details."
             )
+            if DEBUG_LOGGING:
+                import traceback
+                print(f"Error in save_simulation: {str(e)}")
+                print(traceback.format_exc())
     
     def confirm_close(self):
         """Show confirmation dialog before closing if there are unsaved changes"""
-        # In a more complete implementation, we would check for unsaved changes here
-        # For now, just show a simple confirmation
-        reply = QMessageBox.question(
-            self,
-            "Confirm Close",
-            "Are you sure you want to close? Any unsaved changes will be lost.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
+        # Skip save prompt if we just saved
+        if self.just_saved:
+            self.close()
+            return
+            
+        if self.is_new or self.has_unsaved_changes():
+            message = "Do you want to save this simulation before closing?"
+            if not self.is_new and self.has_unsaved_changes():
+                message = "You have changed simulation parameters. Do you want to save as a new simulation before closing?"
+                
+            reply = QMessageBox.question(
+                self,
+                "Save Simulation",
+                message,
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                # Set flag to avoid recursion
+                self.just_saved = True
+                self.save_simulation()
+                self.close()
+            elif reply == QMessageBox.Discard:
+                self.close()
+            # If cancel, do nothing
+        else:
+            # No changes to save, just close
             self.close()
     
     def closeEvent(self, event):
         """Handle the window close event"""
-        # Accept the event to close the window
-        event.accept() 
+        # Skip save prompt if we just saved
+        if self.just_saved:
+            event.accept()
+            return
+            
+        # For new simulations or edited existing ones, ask about saving
+        if self.is_new or (not self.is_new and self.has_unsaved_changes()):
+            message = "Do you want to save this simulation before closing?"
+            if not self.is_new and self.has_unsaved_changes():
+                message = "You have changed simulation parameters. Do you want to save as a new simulation before closing?"
+                
+            reply = QMessageBox.question(
+                self,
+                "Save Simulation",
+                message,
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                # Set flag to avoid recursion and directly save
+                self.just_saved = True
+                self.save_simulation()
+                event.accept()
+            elif reply == QMessageBox.Discard:
+                event.accept()
+            else:  # Cancel
+                event.ignore()
+        else:
+            # No changes to save, just close
+            event.accept()
+    
+    def has_unsaved_changes(self):
+        """Check if the current simulation has unsaved changes."""
+        if self.is_new:
+            # New simulations always have unsaved changes
+            return True
+            
+        if not self.simulation:
+            return False
+            
+        # Get the current data from the tabs
+        current_data = self.get_simulation_data()
+        if not current_data:
+            return False
+            
+        # Compare key parameters with the original simulation
+        try:
+            # Check basic scalar parameters
+            basic_params = ['display_name', 'time_step', 'total_time']
+            
+            for param in basic_params:
+                original_value = getattr(self.simulation, param, None)
+                current_value = current_data.get(param)
+                
+                # Skip if either value is None (can't compare)
+                if original_value is None or current_value is None:
+                    continue
+                    
+                # Convert to the same type for comparison
+                if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
+                    # For numeric values, check if they're close enough (with a reasonable tolerance)
+                    if abs(original_value - current_value) > 1e-6:
+                        if DEBUG_LOGGING:
+                            print(f"Parameter {param} changed: {original_value} -> {current_value}")
+                        return True
+                elif str(original_value).strip() != str(current_value).strip():
+                    if DEBUG_LOGGING:
+                        print(f"Parameter {param} changed: '{original_value}' -> '{current_value}'")
+                    return True
+            
+            # Compare vesicle/exterior params
+            if self.simulation.config.vesicle_params and 'vesicle_params' in current_data:
+                for key, original_value in self.simulation.config.vesicle_params.items():
+                    if key in current_data['vesicle_params']:
+                        current_value = current_data['vesicle_params'][key]
+                        if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
+                            if abs(original_value - current_value) > 1e-6:
+                                if DEBUG_LOGGING:
+                                    print(f"Vesicle param {key} changed: {original_value} -> {current_value}")
+                                return True
+            
+            if self.simulation.config.exterior_params and 'exterior_params' in current_data:
+                for key, original_value in self.simulation.config.exterior_params.items():
+                    if key in current_data['exterior_params']:
+                        current_value = current_data['exterior_params'][key]
+                        if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
+                            if abs(original_value - current_value) > 1e-6:
+                                if DEBUG_LOGGING:
+                                    print(f"Exterior param {key} changed: {original_value} -> {current_value}")
+                                return True
+            
+            # Check if ion species have changed
+            if hasattr(self.simulation, 'species') and self.simulation.species:
+                current_species = current_data.get('species', {})
+                
+                # Check if species count changed
+                if len(self.simulation.species) != len(current_species):
+                    if DEBUG_LOGGING:
+                        print(f"Species count changed: {len(self.simulation.species)} -> {len(current_species)}")
+                    return True
+                
+                # Check individual species parameters
+                for name, original_species in self.simulation.species.items():
+                    if name not in current_species:
+                        if DEBUG_LOGGING:
+                            print(f"Species '{name}' removed")
+                        return True
+                    
+                    current_species_obj = current_species[name]
+                    
+                    # Compare key species parameters
+                    species_params = ['init_vesicle_conc', 'exterior_conc', 'elementary_charge']
+                    for param in species_params:
+                        original_value = getattr(original_species.config, param, None)
+                        current_value = getattr(current_species_obj.config, param, None)
+                        
+                        if original_value is not None and current_value is not None:
+                            if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
+                                if abs(original_value - current_value) > 1e-6:
+                                    if DEBUG_LOGGING:
+                                        print(f"Species '{name}' param {param} changed: {original_value} -> {current_value}")
+                                    return True
+            
+            # Check if channels have changed
+            if hasattr(self.simulation, 'channels') and self.simulation.channels:
+                current_channels = current_data.get('channels', {})
+                
+                # Check if channel count changed
+                if len(self.simulation.channels) != len(current_channels):
+                    if DEBUG_LOGGING:
+                        print(f"Channel count changed: {len(self.simulation.channels)} -> {len(current_channels)}")
+                    return True
+                
+                # Check individual channel parameters
+                for name, original_channel in self.simulation.channels.items():
+                    if name not in current_channels:
+                        if DEBUG_LOGGING:
+                            print(f"Channel '{name}' removed")
+                        return True
+                    
+                    # For channels, a detailed parameter comparison would be complex
+                    # So we'll just check if the channel type changed as a basic test
+                    current_channel = current_channels[name]
+                    if hasattr(original_channel, 'channel_type') and hasattr(current_channel, 'channel_type'):
+                        if original_channel.channel_type != current_channel.channel_type:
+                            if DEBUG_LOGGING:
+                                print(f"Channel '{name}' type changed: {original_channel.channel_type} -> {current_channel.channel_type}")
+                            return True
+            
+            # Check if ion channel links have changed
+            if hasattr(self.simulation, 'ion_channel_links') and hasattr(self.simulation.ion_channel_links, 'get_links'):
+                original_links = self.simulation.ion_channel_links.get_links()
+                current_links_obj = current_data.get('ion_channel_links')
+                
+                if current_links_obj and hasattr(current_links_obj, 'get_links'):
+                    current_links = current_links_obj.get_links()
+                    
+                    # Simple check: different number of primary ions
+                    if len(original_links) != len(current_links):
+                        if DEBUG_LOGGING:
+                            print(f"Ion channel links count changed: {len(original_links)} -> {len(current_links)}")
+                        return True
+                    
+                    # Check links for each primary ion
+                    for primary_ion, original_ion_links in original_links.items():
+                        if primary_ion not in current_links:
+                            if DEBUG_LOGGING:
+                                print(f"Primary ion '{primary_ion}' links removed")
+                            return True
+                        
+                        current_ion_links = current_links[primary_ion]
+                        if len(original_ion_links) != len(current_ion_links):
+                            if DEBUG_LOGGING:
+                                print(f"Links count for '{primary_ion}' changed: {len(original_ion_links)} -> {len(current_ion_links)}")
+                            return True
+            
+            # If we get here, no significant changes detected
+            if DEBUG_LOGGING:
+                print("No changes detected in simulation parameters")
+            return False
+            
+        except Exception as e:
+            # If there's an error in comparison, log it but err on the side of caution
+            if DEBUG_LOGGING:
+                print(f"Error checking for unsaved changes: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+            return True 

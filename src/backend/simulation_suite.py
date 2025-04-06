@@ -6,7 +6,7 @@ import time
 import shutil
 from pathlib import Path
 
-from .simulation import Simulation, SAVE_FREQUENCY
+from .simulation import Simulation
 from ..app_settings import DEBUG_LOGGING
 
 class SimulationSuite:
@@ -51,6 +51,12 @@ class SimulationSuite:
         if not os.path.exists(self.suite_path):
             return
             
+        # Use a local debug flag to enable detailed logging for this method
+        local_debug = True
+        
+        if local_debug:
+            print(f"Loading existing simulations from {self.suite_path}")
+            
         # Look for simulation directories in the suite path
         try:
             # Get existing suite config to check for simulation info
@@ -71,7 +77,7 @@ class SimulationSuite:
                                 "display_name": sim_data.get("display_name", "Unknown")
                             }
                 except Exception as e:
-                    if DEBUG_LOGGING:
+                    if local_debug or DEBUG_LOGGING:
                         print(f"Warning: Failed to read suite config: {str(e)}")
             
             # Load each simulation
@@ -83,12 +89,23 @@ class SimulationSuite:
                         # If there's suite index info for this simulation, update its index
                         if item in suite_sim_info and getattr(simulation, 'simulation_index', 0) == 0:
                             simulation.simulation_index = suite_sim_info[item]['index']
+                            
+                        # Add to the list
+                        self.simulations.append(simulation)
             
             # Synchronize simulation indices to ensure consistency
+            if local_debug:
+                print(f"Loaded {len(self.simulations)} simulations, synchronizing indices...")
+                
             self.synchronize_simulation_indices()
             
+            if local_debug:
+                # Print current simulation indices
+                for sim in self.simulations:
+                    print(f"Simulation {sim.display_name}: index={sim.simulation_index}, hash={sim.config.to_sha256_str()}")
+            
         except Exception as e:
-            if DEBUG_LOGGING:
+            if local_debug or DEBUG_LOGGING:
                 print(f"Warning: Failed to load existing simulations: {str(e)}")
     
     def _load_simulation(self, simulation_hash):
@@ -108,78 +125,75 @@ class SimulationSuite:
             if DEBUG_LOGGING:
                 print(f"Warning: No simulation pickle found at {pickle_path}")
             return None
-            
+        
         try:
-            # Load simulation from pickle
+            # Try to load the simulation from pickle
             with open(pickle_path, 'rb') as f:
-                simulation = pickle.load(f)
-                
-            # Check if this is a full Simulation object or just a config dictionary
-            if not isinstance(simulation, Simulation):
-                if DEBUG_LOGGING:
-                    print(f"Loaded pickle is not a Simulation object. Attempting to reconstruct simulation.")
-                
-                # Try to reconstruct the simulation from the minimal pickle data or config file
-                simulation = self._reconstruct_simulation(simulation_hash, sim_path, simulation)
-                if simulation is None:
-                    if DEBUG_LOGGING:
-                        print(f"Failed to reconstruct simulation from pickle data")
-                    return None
-                
-            # Ensure the simulation's simulations_path is correctly set
-            simulation.simulations_path = self.suite_path
+                pickle_data = pickle.load(f)
             
-            # If simulation index is 0, try to get a proper index
-            if getattr(simulation, 'simulation_index', 0) == 0:
-                # First check suite config for this simulation's index
-                suite_config_path = os.path.join(self.suite_path, "config.json")
-                if os.path.exists(suite_config_path):
-                    try:
-                        with open(suite_config_path, 'r') as f:
-                            suite_config = json.load(f)
-                            for sim_data in suite_config.get("simulations", []):
-                                if sim_data.get("hash") == simulation_hash and sim_data.get("index", 0) > 0:
-                                    simulation.simulation_index = sim_data["index"]
-                                    if DEBUG_LOGGING:
-                                        print(f"Updated index from suite config: {simulation.simulation_index}")
-                                    break
-                    except:
-                        # If reading suite config fails, try individual config
-                        pass
+            # If the loaded object is a Simulation instance, return it
+            if isinstance(pickle_data, Simulation):
+                simulation = pickle_data
                 
-                # Then try the simulation's own config.json
+                # Update the path in case it has changed
+                simulation.simulations_path = self.suite_path
+                
+                # If simulation index is 0, try to get a proper index
                 if getattr(simulation, 'simulation_index', 0) == 0:
-                    config_path = os.path.join(sim_path, "config.json")
-                    if os.path.exists(config_path):
+                    # First check suite config for this simulation's index
+                    suite_config_path = os.path.join(self.suite_path, "config.json")
+                    if os.path.exists(suite_config_path):
                         try:
-                            with open(config_path, 'r') as f:
-                                config_data = json.load(f)
-                                metadata = config_data.get("metadata", {})
-                                index = metadata.get("index")
-                                if index and index > 0:
-                                    simulation.simulation_index = index
-                                    if DEBUG_LOGGING:
-                                        print(f"Updated index from simulation config: {simulation.simulation_index}")
+                            with open(suite_config_path, 'r') as f:
+                                suite_config = json.load(f)
+                                for sim_data in suite_config.get("simulations", []):
+                                    if sim_data.get("hash") == simulation_hash and sim_data.get("index", 0) > 0:
+                                        simulation.simulation_index = sim_data["index"]
+                                        if DEBUG_LOGGING:
+                                            print(f"Updated index from suite config: {simulation.simulation_index}")
+                                        break
                         except:
-                            # If reading config fails, just continue
+                            # If reading suite config fails, try individual config
                             pass
+                    
+                    # Then try the simulation's own config.json
+                    if getattr(simulation, 'simulation_index', 0) == 0:
+                        config_path = os.path.join(sim_path, "config.json")
+                        if os.path.exists(config_path):
+                            try:
+                                with open(config_path, 'r') as f:
+                                    config_data = json.load(f)
+                                    metadata = config_data.get("metadata", {})
+                                    index = metadata.get("index")
+                                    if index and index > 0:
+                                        simulation.simulation_index = index
+                                        if DEBUG_LOGGING:
+                                            print(f"Updated index from simulation config: {simulation.simulation_index}")
+                            except:
+                                # If reading config fails, just continue
+                                pass
+                    
+                    # If still 0, use update_simulation_index() to get a proper index
+                    if getattr(simulation, 'simulation_index', 0) == 0:
+                        simulation.update_simulation_index()
+                        if DEBUG_LOGGING:
+                            print(f"Generated new index: {simulation.simulation_index}")
                 
-                # If still 0, use update_simulation_index() to get a proper index
-                if getattr(simulation, 'simulation_index', 0) == 0:
-                    simulation.update_simulation_index()
-                    if DEBUG_LOGGING:
-                        print(f"Generated new index: {simulation.simulation_index}")
+                return simulation
             
-            # Add to our internal list
-            self.simulations.append(simulation)
-            
-            return simulation
+            # If it's a dictionary, try to reconstruct the simulation
+            elif isinstance(pickle_data, dict):
+                return self._reconstruct_simulation(simulation_hash, sim_path, pickle_data)
+            else:
+                if DEBUG_LOGGING:
+                    print(f"Warning: Pickle file contains unsupported data type: {type(pickle_data)}")
+                return None
             
         except Exception as e:
             if DEBUG_LOGGING:
                 print(f"Warning: Failed to load simulation from {pickle_path}: {str(e)}")
             return None
-            
+    
     def _reconstruct_simulation(self, simulation_hash, sim_path, pickle_data=None):
         """
         Attempt to reconstruct a Simulation object from config files when the pickle
@@ -306,6 +320,9 @@ class SimulationSuite:
         # This ensures the simulation directory exists with proper config files
         self._force_save_simulation(simulation)
         
+        # Synchronize simulation indices to ensure all simulations have unique, consistent indices
+        self.synchronize_simulation_indices()
+        
         # Save the suite configuration
         self._save_suite_config()
         
@@ -313,8 +330,8 @@ class SimulationSuite:
     
     def _force_save_simulation(self, simulation: Simulation) -> str:
         """
-        Force save a simulation to disk, bypassing any SAVE_FREQUENCY checks.
-        This ensures the simulation directory exists even for unrun simulations.
+        Force save a simulation to disk. This ensures the simulation directory exists 
+        even for unrun simulations.
         
         Args:
             simulation: The Simulation object to save
@@ -583,18 +600,11 @@ class SimulationSuite:
         # Set the path to the suite directory
         simulation.simulations_path = self.suite_path
         
-        # For unrun simulations with SAVE_FREQUENCY=0, make sure the directory exists
-        if SAVE_FREQUENCY == 0 and not simulation.has_run:
-            sim_path = os.path.join(self.suite_path, sim_hash)
-            if not os.path.exists(sim_path):
-                return self._force_save_simulation(simulation)
-            else:
-                if DEBUG_LOGGING:
-                    print(f"Simulation directory exists for unrun simulation, skipping save")
-                return sim_path
-        
-        # Normal save for run simulations or when SAVE_FREQUENCY > 0
+        # Save the simulation
         result_path = simulation.save_simulation()
+        
+        # Synchronize simulation indices to ensure all simulations have unique, consistent indices
+        self.synchronize_simulation_indices()
         
         # Update the suite configuration
         self._save_suite_config()
@@ -909,14 +919,24 @@ class SimulationSuite:
         # Check all in-memory simulations first
         for sim in self.simulations:
             sim_hash = sim.config.to_sha256_str()
-            if getattr(sim, 'simulation_index', 0) > 0:
-                simulation_indices[sim_hash] = sim.simulation_index
-                next_index = max(next_index, sim.simulation_index + 1)
             
+            # Collect existing index, if it's valid
+            if getattr(sim, 'simulation_index', 0) > 0:
+                # Only add to simulation_indices if it's not already taken by another sim
+                if sim.simulation_index not in [idx for idx in simulation_indices.values()]:
+                    simulation_indices[sim_hash] = sim.simulation_index
+                    next_index = max(next_index, sim.simulation_index + 1)
+                else:
+                    # If index is already taken, mark this sim for reassignment
+                    simulation_indices[sim_hash] = 0  # Will get reassigned later
+            else:
+                # Mark for assignment
+                simulation_indices[sim_hash] = 0
+        
         # Check filesystem for any additional simulations
         for item in os.listdir(self.suite_path):
             item_path = os.path.join(self.suite_path, item)
-            if not os.path.isdir(item_path):
+            if not os.path.isdir(item_path) or item == '__pycache__':
                 continue
                 
             # Skip if this simulation is already in our list
@@ -930,33 +950,46 @@ class SimulationSuite:
                     with open(config_path, 'r') as f:
                         config_data = json.load(f)
                     index = config_data.get("metadata", {}).get("index")
-                    if index and index > 0:
+                    
+                    if index and index > 0 and index not in [idx for idx in simulation_indices.values()]:
                         simulation_indices[item] = index
                         next_index = max(next_index, index + 1)
-                except:
-                    # If reading config fails, continue
-                    pass
+                    else:
+                        # Index is invalid or duplicate, mark for reassignment
+                        simulation_indices[item] = 0
+                except Exception as e:
+                    if DEBUG_LOGGING:
+                        print(f"Error reading config for {item}: {str(e)}")
+                    # If reading config fails, mark for assignment
+                    simulation_indices[item] = 0
+            else:
+                # No config, mark for assignment
+                simulation_indices[item] = 0
         
         # Now assign indices to any simulations without valid indices
-        # and update all simulations to ensure consistency
-        for sim in self.simulations:
-            sim_hash = sim.config.to_sha256_str()
-            if sim_hash not in simulation_indices:
-                sim.simulation_index = next_index
+        for sim_hash in simulation_indices:
+            if simulation_indices[sim_hash] == 0:
                 simulation_indices[sim_hash] = next_index
                 next_index += 1
                 if DEBUG_LOGGING:
-                    print(f"Assigned new index {sim.simulation_index} to simulation {sim.display_name}")
-            else:
-                # Set the index to make sure in-memory object has correct value
-                sim.simulation_index = simulation_indices[sim_hash]
+                    print(f"Assigned new index {simulation_indices[sim_hash]} to simulation {sim_hash}")
         
-        # Update filesystem for simulations not in memory
+        if DEBUG_LOGGING:
+            print(f"Index assignments: {simulation_indices}")
+        
+        # Update in-memory simulations with their assigned indices
+        for sim in self.simulations:
+            sim_hash = sim.config.to_sha256_str()
+            if sim_hash in simulation_indices:
+                # Always update with the assigned index
+                new_index = simulation_indices[sim_hash]
+                if sim.simulation_index != new_index:
+                    if DEBUG_LOGGING:
+                        print(f"Updating index for simulation {sim.display_name} from {sim.simulation_index} to {new_index}")
+                    sim.simulation_index = new_index
+        
+        # Update filesystem for all simulations
         for sim_hash, index in simulation_indices.items():
-            # Skip if this is an in-memory simulation we've already handled
-            if any(sim.config.to_sha256_str() == sim_hash for sim in self.simulations):
-                continue
-                
             sim_path = os.path.join(self.suite_path, sim_hash)
             if not os.path.isdir(sim_path):
                 continue
@@ -968,17 +1001,22 @@ class SimulationSuite:
                     with open(config_path, 'r') as f:
                         config_data = json.load(f)
                     
-                    # Update the index in metadata
-                    if "metadata" not in config_data:
-                        config_data["metadata"] = {}
-                    config_data["metadata"]["index"] = index
+                    # Get the current index in the file
+                    current_index = config_data.get("metadata", {}).get("index", 0)
                     
-                    # Save the updated config
-                    with open(config_path, 'w') as f:
-                        json.dump(config_data, f, indent=4)
+                    # Only update if index has changed
+                    if current_index != index:
+                        # Update the index in metadata
+                        if "metadata" not in config_data:
+                            config_data["metadata"] = {}
+                        config_data["metadata"]["index"] = index
                         
-                    if DEBUG_LOGGING:
-                        print(f"Updated index to {index} in config for simulation {sim_hash}")
+                        # Save the updated config
+                        with open(config_path, 'w') as f:
+                            json.dump(config_data, f, indent=4)
+                            
+                        if DEBUG_LOGGING:
+                            print(f"Updated index to {index} in config for simulation {sim_hash}")
                 except Exception as e:
                     if DEBUG_LOGGING:
                         print(f"Warning: Failed to update index in config for {sim_hash}: {str(e)}")

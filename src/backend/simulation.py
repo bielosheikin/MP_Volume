@@ -18,7 +18,7 @@ import pickle
 import numpy as np
 import time
 from pathlib import Path
-from ..app_settings import DEBUG_LOGGING, SAVE_FREQUENCY
+from ..app_settings import DEBUG_LOGGING
 
 class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
@@ -410,14 +410,6 @@ class Simulation(Configurable, Trackable):
         # Only update the index if this is a new simulation
         if not simulation_exists:
             self.update_simulation_index()
-        
-        # Check if we should skip saving based on SAVE_FREQUENCY
-        # If SAVE_FREQUENCY is 0 and simulation has not been run, don't save
-        # (Suite will handle this case using _force_save_simulation if needed)
-        if SAVE_FREQUENCY == 0 and not self.has_run:
-            if DEBUG_LOGGING:
-                print(f"Skipping save for unrun simulation with SAVE_FREQUENCY=0")
-            return simulation_dir
         
         # Create directories
         os.makedirs(simulation_dir, exist_ok=True)
