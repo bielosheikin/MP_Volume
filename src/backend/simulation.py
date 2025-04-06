@@ -91,6 +91,11 @@ class Simulation(Configurable, Trackable):
         self.all_species = []  
         self.buffer_capacity = self.init_buffer_capacity
         self.histories = HistoriesStorage()
+        
+        # Initialize simulation_time history
+        self.histories.histories['simulation_time'] = []
+        self.histories.histories['simulation_time'].append(self.time)
+        
         self.nernst_constant = self.temperature * IDEAL_GAS_CONSTANT / FARADAY_CONSTANT
         self.unaccounted_ion_amounts = None
 
@@ -335,6 +340,11 @@ class Simulation(Configurable, Trackable):
         flux_calculation_parameters = self.get_Flux_Calculation_Parameters()
         fluxes = [ion.compute_total_flux(flux_calculation_parameters=flux_calculation_parameters) for ion in self.all_species]
 
+        # Explicitly add simulation_time to histories
+        if 'simulation_time' not in self.histories.histories:
+            self.histories.histories['simulation_time'] = []
+        self.histories.histories['simulation_time'].append(self.time)
+        
         self.histories.update_histories()
         self.update_ion_amounts(fluxes)
 
@@ -361,6 +371,13 @@ class Simulation(Configurable, Trackable):
             if progress_callback and self.iter_num > 0:
                 progress_percent = 100.0 * (iter_idx + 1) / self.iter_num
                 progress_callback(progress_percent)
+        
+        # Make sure final state is recorded
+        self.update_simulation_state()
+        self.histories.update_histories()
+        
+        # Ensure simulation_time includes the final time point
+        self.histories.histories['simulation_time'].append(self.time)
         
         self.has_run = True
         return self.histories

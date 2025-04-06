@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QListWidget, QListWidgetItem, QFrame, QSplitter,
     QMessageBox, QInputDialog, QProgressBar, QMenu, QDialog, QTextEdit,
-    QDialogButtonBox, QFormLayout, QLineEdit, QGridLayout
+    QDialogButtonBox, QFormLayout, QLineEdit, QGridLayout, QTabWidget
 )
 from PyQt5.QtGui import QFont
 
@@ -16,6 +16,7 @@ from ..backend.simulation_suite import SimulationSuite
 from ..app_settings import DEBUG_LOGGING
 from .simulation_window import SimulationWindow
 from .simulation_manager import SimulationManager
+from .results_tab_suite import ResultsTabSuite
 
 
 class SuiteWindow(QMainWindow):
@@ -51,6 +52,12 @@ class SuiteWindow(QMainWindow):
         # Track active simulation managers
         self.simulation_managers = {}
         
+        # Initialize the simulation run queue
+        self.run_queue = []
+        
+        # Initialize current_item
+        self.current_item = None
+        
         # Main widget and layout
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -62,8 +69,15 @@ class SuiteWindow(QMainWindow):
         # Metadata section
         self.init_metadata_section()
         
+        # Tab widget to hold simulations and results
+        self.tab_widget = QTabWidget()
+        self.main_layout.addWidget(self.tab_widget, 1)  # Take up most of the space
+        
         # Simulations section
         self.init_simulations_section()
+        
+        # Results section
+        self.init_results_section()
     
     def init_header_section(self):
         """Initialize the header section"""
@@ -76,7 +90,7 @@ class SuiteWindow(QMainWindow):
         
         # Add refresh button
         refresh_button = QPushButton("Refresh")
-        refresh_button.clicked.connect(self.refresh_simulations)
+        refresh_button.clicked.connect(self.refresh_data)
         header_layout.addWidget(refresh_button)
         
         # Add some action buttons
@@ -140,8 +154,13 @@ class SuiteWindow(QMainWindow):
     
     def init_simulations_section(self):
         """Initialize the simulations section"""
+        # Create widget for simulations tab
+        simulations_widget = QWidget()
+        simulations_layout = QVBoxLayout(simulations_widget)
+        
         # Create a splitter for the simulations section
         splitter = QSplitter(Qt.Horizontal)
+        simulations_layout.addWidget(splitter)
         
         # Left side: List of simulations
         list_widget = QWidget()
@@ -178,14 +197,19 @@ class SuiteWindow(QMainWindow):
         buttons_layout.addWidget(run_button)
         
         # Run All button
-        run_all_button = QPushButton("Run All Unrun")
-        run_all_button.clicked.connect(self.run_all_unrun_simulations)
-        buttons_layout.addWidget(run_all_button)
+        self.run_all_button = QPushButton("Run All Unrun")
+        self.run_all_button.clicked.connect(self.run_all_unrun_simulations)
+        buttons_layout.addWidget(self.run_all_button)
         
         # Delete button
         delete_button = QPushButton("Delete")
         delete_button.clicked.connect(self.delete_selected_simulation)
         buttons_layout.addWidget(delete_button)
+        
+        # View Results button
+        results_button = QPushButton("View Results")
+        results_button.clicked.connect(self.show_results_tab)
+        buttons_layout.addWidget(results_button)
         
         list_layout.addLayout(buttons_layout)
         
@@ -234,11 +258,43 @@ class SuiteWindow(QMainWindow):
         # Set initial sizes (40% for list, 60% for details)
         splitter.setSizes([400, 600])
         
-        # Add splitter to main layout
-        self.main_layout.addWidget(splitter, 1)  # Make simulations section take up most of the space
+        # Add to tab widget
+        self.tab_widget.addTab(simulations_widget, "Simulations")
         
         # Load simulations
         self.refresh_simulations()
+    
+    def init_results_section(self):
+        """Initialize the results section with the ResultsTabSuite"""
+        # Create the results tab
+        self.results_tab = ResultsTabSuite(self.suite)
+        
+        # Add to tab widget
+        self.tab_widget.addTab(self.results_tab, "Results")
+        
+        # Load simulations data for the results tab
+        self.results_tab.load_suite_simulations()
+    
+    def refresh_data(self):
+        """Refresh all data in both tabs"""
+        self.refresh_simulations()
+        self.results_tab.load_suite_simulations()
+    
+    def show_results_tab(self):
+        """Switch to the results tab"""
+        self.tab_widget.setCurrentWidget(self.results_tab)
+        
+        # If a simulation is selected, pre-select it in the results tab
+        selected_items = self.simulation_list.selectedItems()
+        if selected_items:
+            selected_hash = selected_items[0].data(Qt.UserRole)
+            
+            # Find the corresponding item in the results tab
+            for i in range(self.results_tab.simulation_list.count()):
+                item = self.results_tab.simulation_list.item(i)
+                if item.data(Qt.UserRole) == selected_hash:
+                    self.results_tab.simulation_list.setCurrentItem(item)
+                    break
     
     def refresh_simulations(self):
         """Refresh the list of simulations in the suite"""
@@ -344,10 +400,14 @@ class SuiteWindow(QMainWindow):
         self.simulation_windows[sim_hash] = sim_window
     
     def update_simulation_details(self):
-        """Update the details panel with information about the selected simulation"""
-        # Clear the details if no simulation is selected
+        """Update the details view based on the currently selected simulation"""
         selected_items = self.simulation_list.selectedItems()
+        
+        # Keep track of the current item
+        self.current_item = selected_items[0] if selected_items else None
+        
         if not selected_items:
+            # No simulation selected, clear the details
             self.details_content.setText("Select a simulation to view details")
             self.time_step_label.setText("Time Step: -")
             self.total_time_label.setText("Total Time: -")
@@ -398,7 +458,6 @@ class SuiteWindow(QMainWindow):
     
     def run_selected_simulation(self):
         """Run the currently selected simulation"""
-        # Get the selected item
         selected_items = self.simulation_list.selectedItems()
         if not selected_items:
             QMessageBox.warning(
@@ -408,8 +467,8 @@ class SuiteWindow(QMainWindow):
             )
             return
         
-        # Get the simulation hash from the item
-        sim_hash = selected_items[0].data(Qt.UserRole)
+        selected_item = selected_items[0]
+        sim_hash = selected_item.data(Qt.UserRole)
         
         # Check if this simulation is already running
         if sim_hash in self.simulation_managers:
@@ -419,264 +478,272 @@ class SuiteWindow(QMainWindow):
                 "This simulation is already running."
             )
             return
-            
-        # Load the simulation from the suite
-        simulation = self.suite.get_simulation(sim_hash)
-        if not simulation:
-            QMessageBox.critical(
-                self,
-                "Error Loading Simulation",
-                f"Failed to load simulation with hash {sim_hash}"
-            )
-            return
         
-        # Ask for confirmation
-        reply = QMessageBox.question(
-            self,
-            "Confirm Run",
-            f"Are you sure you want to run simulation '{simulation.display_name}'?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                # Reset progress bar
-                self.progress_bar.setValue(0)
-                
-                # Create a simulation manager for this simulation
-                self.simulation_managers[sim_hash] = SimulationManager(simulation)
-                
-                # Connect manager signals to UI
-                self.simulation_managers[sim_hash].progress_updated.connect(self.progress_bar.setValue)
-                
-                # Define result callback
-                def on_simulation_completed(updated_simulation):
-                    # Save the simulation to update its has_run status
-                    self.suite.save_simulation(updated_simulation)
-                    
-                    # Refresh the list to show the updated status
-                    self.refresh_simulations()
-                    
-                    # Update the simulation details
-                    self.update_simulation_details()
-                    
-                    # Clean up and remove the manager
-                    if sim_hash in self.simulation_managers:
-                        manager = self.simulation_managers.pop(sim_hash)
-                        manager.cleanup()
-                    
-                    # Show completion message
-                    QMessageBox.information(
-                        self,
-                        "Simulation Complete",
-                        f"Simulation '{updated_simulation.display_name}' completed successfully."
-                    )
-                
-                # Define error callback
-                def on_simulation_error(error_str, traceback_str):
-                    # Clean up and remove the manager
-                    if sim_hash in self.simulation_managers:
-                        manager = self.simulation_managers.pop(sim_hash)
-                        manager.cleanup()
-                    
-                    # Show error message
-                    QMessageBox.critical(
-                        self,
-                        "Simulation Error",
-                        f"Error running simulation '{simulation.display_name}':\n{error_str}\n\n"
-                        f"Technical details:\n{traceback_str}"
-                    )
-                
-                # Connect result and error signals
-                self.simulation_managers[sim_hash].simulation_completed.connect(on_simulation_completed)
-                self.simulation_managers[sim_hash].simulation_error.connect(on_simulation_error)
-                
-                # Start the simulation in its own thread
-                self.simulation_managers[sim_hash].start_simulation()
-                
-            except Exception as e:
-                # Clean up if there was an error starting the simulation
-                if sim_hash in self.simulation_managers:
-                    self.simulation_managers[sim_hash].cleanup()
-                    del self.simulation_managers[sim_hash]
-                    
-                QMessageBox.critical(
-                    self,
-                    "Simulation Error",
-                    f"Error running simulation: {str(e)}"
-                )
-    
-    def run_all_unrun_simulations(self):
-        """Run all simulations in the suite that haven't been run yet"""
-        # Ask for confirmation
-        reply = QMessageBox.question(
-            self,
-            "Confirm Run All",
-            "Are you sure you want to run all unrun simulations in this suite?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                # Get the list of unrun simulations
-                unrun_simulations = []
-                
-                for sim_data in self.suite.list_simulations():
-                    if not sim_data['has_run']:
-                        sim = self.suite.get_simulation(sim_data['hash'])
-                        if sim:
-                            unrun_simulations.append((sim_data['hash'], sim))
-                
-                if not unrun_simulations:
-                    QMessageBox.information(
-                        self,
-                        "No Unrun Simulations",
-                        "All simulations in this suite have already been run."
-                    )
-                    return
-                
-                # Set up our simulation queue
-                self.simulation_queue = list(unrun_simulations)
-                self.total_in_queue = len(self.simulation_queue)
-                self.simulations_completed = 0
-                self.simulations_failed = 0
-                
-                # Start the first simulation
-                self._run_next_in_queue()
-                
-            except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error Running Simulations",
-                    f"An error occurred: {str(e)}"
-                )
-    
-    def _run_next_in_queue(self):
-        """Run the next simulation in the queue"""
-        # Check if we have more simulations to run
-        if not self.simulation_queue:
-            # All done, show final results
-            QMessageBox.information(
-                self,
-                "Batch Run Complete",
-                f"Completed running {self.total_in_queue} simulations.\n"
-                f"Successful: {self.simulations_completed}\n"
-                f"Failed: {self.simulations_failed}"
-            )
-            return
-        
-        # Get the next simulation from the queue
-        sim_hash, simulation = self.simulation_queue.pop(0)
-        
-        # Check if this simulation is already running
-        if sim_hash in self.simulation_managers:
-            # Skip this one and move to the next
-            self.simulations_failed += 1
-            QMessageBox.warning(
-                self,
-                "Simulation Already Running",
-                f"Simulation '{simulation.display_name}' is already running. Skipping to next one."
-            )
-            self._run_next_in_queue()
-            return
-        
-        # Update the UI to show which simulation is running
-        self.simulation_list.setCurrentRow(0)  # Clear selection first
-        
-        # Find and select the correct item
-        for row in range(self.simulation_list.count()):
-            item = self.simulation_list.item(row)
-            if item.data(Qt.UserRole) == sim_hash:
-                self.simulation_list.setCurrentRow(row)
-                break
-        
-        # Update details panel
-        self.update_simulation_details()
-        
-        # Reset progress bar
-        self.progress_bar.setValue(0)
-        
+        # Load the simulation
         try:
-            # Show which simulation is running
-            current_position = self.total_in_queue - len(self.simulation_queue)
-            QMessageBox.information(
-                self,
-                "Running Simulation",
-                f"Running simulation {current_position} of {self.total_in_queue}: {simulation.display_name}\n\n"
-                f"Click OK to start."
-            )
+            simulation = self.suite.get_simulation(sim_hash)
+            if not simulation:
+                QMessageBox.critical(
+                    self,
+                    "Error Loading Simulation",
+                    "Failed to load the selected simulation."
+                )
+                return
             
-            # Create a simulation manager for this simulation
-            self.simulation_managers[sim_hash] = SimulationManager(simulation)
+            # Create manager to run the simulation in a separate thread
+            manager = SimulationManager(simulation)
             
-            # Connect progress signal to update progress bar
-            self.simulation_managers[sim_hash].progress_updated.connect(self.progress_bar.setValue)
+            # Connect the progress signal directly to the progress bar's setValue method
+            # This ensures the UI updates with progress
+            manager.progress_updated.connect(self.progress_bar.setValue)
             
-            # Define completion handler
+            # Define completion callback
             def on_simulation_completed(updated_simulation):
                 # Save the simulation to update its has_run status
                 self.suite.save_simulation(updated_simulation)
                 
-                # Refresh the list to show the updated status
+                # Reset progress bar
+                self.progress_bar.setValue(0)
+                
+                # Clean up and remove the manager
+                if sim_hash in self.simulation_managers:
+                    self.simulation_managers.pop(sim_hash).cleanup()
+                
+                # Refresh the simulation list
                 self.refresh_simulations()
                 
-                # Update the simulation details
-                self.update_simulation_details()
+                # Refresh the results tab
+                self.results_tab.load_suite_simulations()
                 
-                # Clean up and remove manager
-                if sim_hash in self.simulation_managers:
-                    manager = self.simulation_managers.pop(sim_hash)
-                    manager.cleanup()
+                # If this simulation is still selected, update the details
+                if self.simulation_list.selectedItems() and self.simulation_list.selectedItems()[0].data(Qt.UserRole) == sim_hash:
+                    self.update_simulation_details()
                 
-                # Increment successful completion count
-                self.simulations_completed += 1
-                
-                # Run the next simulation in the queue
-                self._run_next_in_queue()
+                QMessageBox.information(
+                    self,
+                    "Simulation Complete",
+                    f"Simulation '{updated_simulation.display_name}' completed successfully."
+                )
             
-            # Define error handler
+            manager.simulation_completed.connect(on_simulation_completed)
+            
+            # Define error callback
             def on_simulation_error(error_str, traceback_str):
-                # Clean up and remove manager
-                if sim_hash in self.simulation_managers:
-                    manager = self.simulation_managers.pop(sim_hash)
-                    manager.cleanup()
+                # Reset progress bar
+                self.progress_bar.setValue(0)
                 
-                # Increment failure count
-                self.simulations_failed += 1
+                # Clean up and remove the manager
+                if sim_hash in self.simulation_managers:
+                    self.simulation_managers.pop(sim_hash).cleanup()
                 
                 # Show error message
-                QMessageBox.critical(
-                    self,
-                    "Simulation Error",
-                    f"Error running simulation '{simulation.display_name}':\n{error_str}\n\n"
-                    f"Click OK to continue with the next simulation."
-                )
+                error_dialog = QDialog(self)
+                error_dialog.setWindowTitle("Simulation Error")
+                error_dialog.setGeometry(100, 100, 800, 600)
                 
-                # Continue with the next simulation
-                self._run_next_in_queue()
+                layout = QVBoxLayout(error_dialog)
+                
+                layout.addWidget(QLabel(f"Error: {error_str}"))
+                
+                traceback_text = QTextEdit()
+                traceback_text.setPlainText(traceback_str)
+                traceback_text.setReadOnly(True)
+                layout.addWidget(traceback_text)
+                
+                button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+                button_box.accepted.connect(error_dialog.accept)
+                layout.addWidget(button_box)
+                
+                error_dialog.exec_()
+                
+            manager.simulation_error.connect(on_simulation_error)
             
-            # Connect result and error signals
-            self.simulation_managers[sim_hash].simulation_completed.connect(on_simulation_completed)
-            self.simulation_managers[sim_hash].simulation_error.connect(on_simulation_error)
+            # Store the manager
+            self.simulation_managers[sim_hash] = manager
+            
+            # Reset and update the progress bar
+            self.progress_bar.setValue(0)
+            
+            # Update the selected item text to show it's running
+            selected_item.setText(f"{simulation.display_name} (#{simulation.simulation_index}) [Running...]")
             
             # Start the simulation
-            self.simulation_managers[sim_hash].start_simulation()
+            manager.start_simulation()
             
         except Exception as e:
-            # If there's an error starting the simulation, handle it and move to the next one
-            if sim_hash in self.simulation_managers:
-                self.simulation_managers[sim_hash].cleanup()
-                del self.simulation_managers[sim_hash]
-                
-            self.simulations_failed += 1
             QMessageBox.critical(
                 self,
-                "Simulation Error",
-                f"Error setting up simulation '{simulation.display_name}': {str(e)}\n\n"
-                f"Click OK to continue with the next simulation."
+                "Error Running Simulation",
+                f"Failed to run simulation: {str(e)}"
             )
+    
+    def run_all_unrun_simulations(self):
+        """Run all simulations that haven't been run yet"""
+        # Get all simulations that haven't been run
+        simulations = self.suite.list_simulations()
+        unrun_simulations = []
+        
+        for sim_info in simulations:
+            if not sim_info.get('has_run', False):
+                sim_hash = sim_info.get('hash', '')
+                # Only add simulations that aren't already running
+                if sim_hash not in self.simulation_managers:
+                    unrun_simulations.append(sim_hash)
+        
+        if not unrun_simulations:
+            QMessageBox.information(
+                self,
+                "No Unrun Simulations",
+                "All simulations in this suite have already been run."
+            )
+            return
+        
+        # Ask for confirmation
+        reply = QMessageBox.question(
+            self,
+            "Confirm Run All",
+            f"Are you sure you want to run {len(unrun_simulations)} unrun simulations?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Set up the simulation queue
+            self.run_queue = unrun_simulations
+            
+            # Disable the Run All button while processing
+            if hasattr(self, 'run_all_button') and self.run_all_button:
+                self.run_all_button.setText("Running All...")
+                self.run_all_button.setEnabled(False)
+            
+            # Start running the queue
+            self._run_next_in_queue()
+    
+    def _run_next_in_queue(self):
+        """Run the next simulation in the queue"""
+        if not self.run_queue:
+            # No more simulations to run
+            if hasattr(self, 'run_all_button') and self.run_all_button:
+                self.run_all_button.setText("Run All Unrun")
+                self.run_all_button.setEnabled(True)
+            
+            QMessageBox.information(
+                self,
+                "All Simulations Complete",
+                "All queued simulations have been processed."
+            )
+            return
+        
+        # Get the next simulation from the queue
+        sim_hash = self.run_queue.pop(0)
+        
+        # Check if this simulation is already running
+        if sim_hash in self.simulation_managers:
+            # Skip and move to next
+            QMessageBox.warning(
+                self,
+                "Simulation Already Running",
+                f"Simulation '{sim_hash}' is already running. Skipping to next one."
+            )
+            self._run_next_in_queue()
+            return
+        
+        # Load the simulation
+        try:
+            simulation = self.suite.get_simulation(sim_hash)
+            if not simulation:
+                # Skip and move to next
+                self._run_next_in_queue()
+                return
+            
+            # Create manager to run the simulation in a separate thread
+            manager = SimulationManager(simulation)
+            
+            # Always connect progress updates to the progress bar
+            # This will show progress for whatever simulation is currently running
+            manager.progress_updated.connect(self.progress_bar.setValue)
+            
+            # Define completion callback
+            def on_simulation_completed(updated_simulation):
+                # Save the simulation to update its has_run status
+                self.suite.save_simulation(updated_simulation)
+                
+                # Reset the progress bar
+                self.progress_bar.setValue(0)
+                
+                # Clean up and remove manager
+                if sim_hash in self.simulation_managers:
+                    self.simulation_managers.pop(sim_hash).cleanup()
+                
+                # Refresh the simulation list
+                self.refresh_simulations()
+                
+                # Refresh the results tab
+                self.results_tab.load_suite_simulations()
+                
+                # If this simulation is selected, update the details
+                if self.simulation_list.selectedItems() and self.simulation_list.selectedItems()[0].data(Qt.UserRole) == sim_hash:
+                    self.update_simulation_details()
+                
+                # Move to the next simulation in the queue
+                self._run_next_in_queue()
+            
+            manager.simulation_completed.connect(on_simulation_completed)
+            
+            # Define error callback
+            def on_simulation_error(error_str, traceback_str):
+                # Reset the progress bar
+                self.progress_bar.setValue(0)
+                
+                # Clean up and remove manager
+                if sim_hash in self.simulation_managers:
+                    self.simulation_managers.pop(sim_hash).cleanup()
+                
+                # Show error message
+                error_dialog = QDialog(self)
+                error_dialog.setWindowTitle("Simulation Error")
+                error_dialog.setGeometry(100, 100, 800, 600)
+                
+                layout = QVBoxLayout(error_dialog)
+                
+                layout.addWidget(QLabel(f"Error in simulation '{simulation.display_name}': {error_str}"))
+                
+                traceback_text = QTextEdit()
+                traceback_text.setPlainText(traceback_str)
+                traceback_text.setReadOnly(True)
+                layout.addWidget(traceback_text)
+                
+                button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+                button_box.accepted.connect(error_dialog.accept)
+                layout.addWidget(button_box)
+                
+                error_dialog.exec_()
+                
+                # Continue with next simulation
+                self._run_next_in_queue()
+            
+            manager.simulation_error.connect(on_simulation_error)
+            
+            # Store the manager
+            self.simulation_managers[sim_hash] = manager
+            
+            # Reset the progress bar
+            self.progress_bar.setValue(0)
+            
+            # Find this simulation in the list and update its text
+            for i in range(self.simulation_list.count()):
+                item = self.simulation_list.item(i)
+                if item.data(Qt.UserRole) == sim_hash:
+                    item.setText(f"{simulation.display_name} (#{simulation.simulation_index}) [Running...]")
+                    break
+            
+            # Start the simulation
+            manager.start_simulation()
+        
+        except Exception as e:
+            print(f"Error running simulation: {str(e)}")
+            
+            # Continue with next simulation
             self._run_next_in_queue()
     
     def delete_selected_simulation(self):
@@ -694,16 +761,7 @@ class SuiteWindow(QMainWindow):
         # Get the simulation hash from the item
         sim_hash = selected_items[0].data(Qt.UserRole)
         
-        # Check if the simulation window is open
-        if sim_hash in self.simulation_windows and self.simulation_windows[sim_hash].isVisible():
-            QMessageBox.warning(
-                self,
-                "Simulation In Use",
-                "This simulation is currently open. Please close it before deleting."
-            )
-            return
-        
-        # Load the simulation from the suite to get its display name
+        # Load the simulation to get its display name
         simulation = self.suite.get_simulation(sim_hash)
         if not simulation:
             QMessageBox.critical(
@@ -717,9 +775,8 @@ class SuiteWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Confirm Deletion",
-            f"Are you sure you want to delete simulation '{simulation.display_name}'?\n\n"
-            f"This will permanently delete all simulation data!",
-            QMessageBox.Yes | QMessageBox.No,
+            f"Are you sure you want to delete simulation '{simulation.display_name}'?\nThis cannot be undone.",
+            QMessageBox.Yes | 
             QMessageBox.No
         )
         
@@ -737,6 +794,9 @@ class SuiteWindow(QMainWindow):
                     
                     # Refresh the list
                     self.refresh_simulations()
+                    
+                    # Also refresh the results tab
+                    self.results_tab.refresh_simulations()
                     
                     # Clear the details
                     self.details_content.setText("Select a simulation to view details")
@@ -761,6 +821,9 @@ class SuiteWindow(QMainWindow):
         """Handle the simulation_saved signal from a simulation window"""
         # Refresh the list of simulations
         self.refresh_simulations()
+        
+        # Also refresh the results tab
+        self.results_tab.refresh_simulations()
         
         # Update the metadata display to show the new simulation count
         metadata = self.suite.get_metadata()
