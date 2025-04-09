@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QPushButton, QProgressBar, QMessageBox, QLineEdit
+from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QPushButton, QMessageBox, QLineEdit
 
 class SimulationParamsTab(QWidget):
     def __init__(self):
@@ -21,10 +21,6 @@ class SimulationParamsTab(QWidget):
         self.total_time.setRange(0.1, 10000.0)
         self.total_time.setValue(1000.0)
         layout.addRow("Total Simulation Time (s):", self.total_time)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
-        layout.addRow("Progress:", self.progress_bar)
         
         self.setLayout(layout)
         

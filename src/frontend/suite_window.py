@@ -145,12 +145,7 @@ class SuiteWindow(QMainWindow):
         suite_label.setFont(QFont("Arial", 14, QFont.Bold))
         header_layout.addWidget(suite_label, 1)
         
-        # Add refresh button
-        refresh_button = QPushButton("Refresh")
-        refresh_button.clicked.connect(self.refresh_data)
-        header_layout.addWidget(refresh_button)
-        
-        # Add some action buttons
+        # Add back button
         back_button = QPushButton("Back to Suite Manager")
         back_button.clicked.connect(self.close)
         header_layout.addWidget(back_button)

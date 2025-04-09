@@ -116,15 +116,10 @@ class ResultsTabSuite(QWidget):
         self.plot_button.clicked.connect(self.update_graph)
         controls_layout.addWidget(self.plot_button, 0, 4)
         
-        # Update button
-        self.update_button = QPushButton("Update Graph")
-        self.update_button.clicked.connect(self.update_graph)
-        controls_layout.addWidget(self.update_button, 0, 5)
-        
         # Export button
         self.export_button = QPushButton("Export Data as CSV")
         self.export_button.clicked.connect(self.export_to_csv)
-        controls_layout.addWidget(self.export_button, 0, 6)
+        controls_layout.addWidget(self.export_button, 0, 5)
         
         graph_layout.addWidget(controls_widget)
         

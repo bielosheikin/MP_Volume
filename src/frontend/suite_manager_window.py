@@ -107,11 +107,6 @@ class SuiteManagerWindow(QMainWindow):
         self.delete_button.clicked.connect(self.delete_selected_suite)
         actions_layout.addWidget(self.delete_button)
         
-        # Refresh button
-        self.refresh_button = QPushButton("Refresh List")
-        self.refresh_button.clicked.connect(self.refresh_suites_list)
-        actions_layout.addWidget(self.refresh_button)
-        
         self.main_layout.addLayout(actions_layout)
     
     def browse_directory(self):
