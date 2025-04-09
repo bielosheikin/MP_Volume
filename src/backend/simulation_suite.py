@@ -52,7 +52,7 @@ class SimulationSuite:
             return
             
         # Use a local debug flag to enable detailed logging for this method
-        local_debug = True
+        local_debug = False  # Changed from True to False to reduce logging
         
         if local_debug:
             print(f"Loading existing simulations from {self.suite_path}")
@@ -505,6 +505,7 @@ class SimulationSuite:
             })
         
         # Then check the filesystem for any we don't have in memory
+        # But use only config.json files (avoid loading pickle files which can be slow)
         try:
             for item in os.listdir(self.suite_path):
                 item_path = os.path.join(self.suite_path, item)
@@ -514,7 +515,7 @@ class SimulationSuite:
                 if not os.path.isdir(item_path) or any(r["hash"] == item for r in result):
                     continue
                     
-                # Try to load metadata from config.json
+                # Try to load metadata from config.json only
                 if os.path.exists(config_path):
                     try:
                         with open(config_path, 'r') as f:
@@ -523,54 +524,32 @@ class SimulationSuite:
                         metadata = config_data.get("metadata", {})
                         simulation = config_data.get("simulation", {})
                         
-                        # Get the index with a more reliable method
-                        # First try metadata (most reliable)
-                        sim_index = metadata.get("index")
+                        # Get simulation data from config.json only
+                        sim_index = metadata.get("index", 1)  # Default to 1 if not found
+                        display_name = simulation.get("display_name", f"Sim #{sim_index}")
+                        has_run = metadata.get("has_run", False)
+                        timestamp = metadata.get("timestamp", "")
                         
-                        # If not found in metadata, try to load from simulation.pickle for more accurate data
-                        if sim_index is None or sim_index == 0:
-                            pickle_path = os.path.join(item_path, "simulation.pickle")
-                            if os.path.exists(pickle_path):
-                                try:
-                                    with open(pickle_path, 'rb') as f:
-                                        simulation_obj = pickle.load(f)
-                                        if hasattr(simulation_obj, 'simulation_index') and simulation_obj.simulation_index > 0:
-                                            sim_index = simulation_obj.simulation_index
-                                except:
-                                    # If pickle loading fails, just continue with what we have
-                                    pass
-                        
-                        # If index is still None or 0, check for a backup in raw_config.json
-                        if sim_index is None or sim_index == 0:
-                            raw_config_path = os.path.join(item_path, "raw_config.json")
-                            if os.path.exists(raw_config_path):
-                                try:
-                                    with open(raw_config_path, 'r') as f:
-                                        raw_config = json.load(f)
-                                        if "simulation_index" in raw_config and raw_config["simulation_index"] > 0:
-                                            sim_index = raw_config["simulation_index"]
-                                except:
-                                    # If raw_config loading fails, just continue
-                                    pass
-                        
-                        # If no index found, default to 1 (instead of 0) to avoid confusion
-                        if sim_index is None or sim_index == 0:
-                            sim_index = 1
-                        
+                        # Add to our result list
                         result.append({
                             "hash": item,
-                            "display_name": simulation.get("display_name", "Unknown"),
+                            "display_name": display_name,
                             "index": sim_index,
-                            "timestamp": metadata.get("timestamp", "Unknown"),
-                            "has_run": metadata.get("has_run", False)
+                            "timestamp": timestamp,
+                            "has_run": has_run
                         })
+                        
                     except Exception as e:
-                        print(f"Warning: Failed to read config for {item}: {str(e)}")
+                        if DEBUG_LOGGING:
+                            print(f"Warning: Failed to read config for simulation {item}: {str(e)}")
+                            
         except Exception as e:
-            print(f"Warning: Failed to list simulations in the filesystem: {str(e)}")
+            if DEBUG_LOGGING:
+                print(f"Warning: Error listing simulations from filesystem: {str(e)}")
         
-        # Sort by index for consistent ordering
-        result.sort(key=lambda x: x["index"])
+        # Sort the result by simulation index
+        result.sort(key=lambda x: x.get("index", 0))
+        
         return result
     
     def save_simulation(self, simulation: Simulation) -> str:

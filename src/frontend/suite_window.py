@@ -2,14 +2,15 @@ import os
 import time
 from typing import Dict, List, Optional, Any
 
-from PyQt5.QtCore import Qt, pyqtSignal, QThread
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QListWidget, QListWidgetItem, QFrame, QSplitter,
     QMessageBox, QInputDialog, QProgressBar, QMenu, QDialog, QTextEdit,
-    QDialogButtonBox, QFormLayout, QLineEdit, QGridLayout, QTabWidget
+    QDialogButtonBox, QFormLayout, QLineEdit, QGridLayout, QTabWidget, QProgressDialog
 )
 from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QApplication
 
 from ..backend.simulation import Simulation
 from ..backend.simulation_suite import SimulationSuite
@@ -33,19 +34,75 @@ class SuiteWindow(QMainWindow):
         self.suite_name = suite_name
         self.suite_directory = suite_directory
         
-        # Load the simulation suite
+        # Show initial loading dialog
+        self.progress = QProgressDialog("Initializing suite...", None, 0, 100, self)
+        self.progress.setWindowTitle("Loading Suite")
+        self.progress.setWindowModality(Qt.WindowModal)
+        self.progress.setValue(10)
+        self.progress.show()
+        QApplication.processEvents()
+        
+        # Load the simulation suite (minimal load initially)
         try:
             # Get the parent directory of the suite directory, which is the simulation_suites_root
             simulation_suites_root = os.path.dirname(suite_directory)
             self.suite = SimulationSuite(suite_name, simulation_suites_root)
+            
+            self.progress.setValue(30)
+            self.progress.setLabelText("Creating user interface...")
+            QApplication.processEvents()
+            
+            # Create the main layout and UI
+            self.init_ui()
+            
+            self.progress.setValue(50)
+            self.progress.setLabelText("Loading initial data...")
+            QApplication.processEvents()
+            
+            # Schedule the rest of the loading to happen after the window is visible
+            # This improves perceived performance
+            QTimer.singleShot(100, self.finish_loading)
+            
         except Exception as e:
+            if hasattr(self, 'progress'):
+                self.progress.close()
             QMessageBox.critical(
                 self,
                 "Error Loading Suite",
                 f"Failed to load simulation suite: {str(e)}"
             )
-            return
-        
+    
+    def finish_loading(self):
+        """Complete the loading process after the UI is visible"""
+        try:
+            self.progress.setLabelText("Loading simulation metadata...")
+            self.progress.setValue(60)
+            QApplication.processEvents()
+            
+            # Refresh simulations list
+            self.refresh_simulations()
+            
+            self.progress.setLabelText("Loading results data...")
+            self.progress.setValue(80)
+            QApplication.processEvents()
+            
+            # Load results tab data
+            if hasattr(self, 'results_tab'):
+                self.results_tab.load_suite_simulations()
+            
+            self.progress.setValue(100)
+            self.progress.close()
+            
+        except Exception as e:
+            self.progress.close()
+            QMessageBox.warning(
+                self,
+                "Loading Warning",
+                f"Some data could not be loaded: {str(e)}\n\nYou can try refreshing the data manually."
+            )
+    
+    def init_ui(self):
+        """Initialize the UI components"""
         # Keep track of open simulation windows
         self.simulation_windows = {}
         
@@ -206,11 +263,6 @@ class SuiteWindow(QMainWindow):
         delete_button.clicked.connect(self.delete_selected_simulation)
         buttons_layout.addWidget(delete_button)
         
-        # View Results button
-        results_button = QPushButton("View Results")
-        results_button.clicked.connect(self.show_results_tab)
-        buttons_layout.addWidget(results_button)
-        
         list_layout.addLayout(buttons_layout)
         
         # Right side: Simulation details
@@ -272,51 +324,63 @@ class SuiteWindow(QMainWindow):
         # Add to tab widget
         self.tab_widget.addTab(self.results_tab, "Results")
         
-        # Load simulations data for the results tab
-        self.results_tab.load_suite_simulations()
+        # We'll load the simulation data later in finish_loading()
+        # to avoid slowdowns during initial UI creation
     
     def refresh_data(self):
         """Refresh all data in both tabs"""
         self.refresh_simulations()
         self.results_tab.load_suite_simulations()
     
-    def show_results_tab(self):
-        """Switch to the results tab"""
-        self.tab_widget.setCurrentWidget(self.results_tab)
-        
-        # If a simulation is selected, pre-select it in the results tab
+    def show_simulation_context_menu(self, pos):
+        """Show the context menu for a simulation"""
         selected_items = self.simulation_list.selectedItems()
-        if selected_items:
-            selected_hash = selected_items[0].data(Qt.UserRole)
-            
-            # Find the corresponding item in the results tab
-            for i in range(self.results_tab.simulation_list.count()):
-                item = self.results_tab.simulation_list.item(i)
-                if item.data(Qt.UserRole) == selected_hash:
-                    self.results_tab.simulation_list.setCurrentItem(item)
-                    break
+        if not selected_items:
+            return
+        
+        sim_hash = selected_items[0].data(Qt.UserRole)
+        menu = QMenu(self)
+        
+        # Add actions to the context menu
+        open_action = menu.addAction("Open")
+        open_action.triggered.connect(lambda: self.open_selected_simulation())
+        
+        run_action = menu.addAction("Run")
+        run_action.triggered.connect(self.run_selected_simulation)
+        
+        delete_action = menu.addAction("Delete")
+        delete_action.triggered.connect(self.delete_selected_simulation)
+        
+        menu.exec_(self.simulation_list.mapToGlobal(pos))
     
     def refresh_simulations(self):
-        """Refresh the list of simulations in the suite"""
-        # Clear the list
+        """Refresh the list of simulations"""
+        # Clear existing items
         self.simulation_list.clear()
         
-        # Get the list of simulations from the suite
+        # Get updated list of simulations
         simulations = self.suite.list_simulations()
         
         # Add each simulation to the list
         for sim_data in simulations:
-            item = QListWidgetItem(f"{sim_data['display_name']} ({sim_data['hash'][:8]})")
+            sim_hash = sim_data['hash']
+            display_name = sim_data['display_name']
+            sim_index = sim_data['index']
+            has_run = sim_data.get('has_run', False)
             
-            # Store the hash in the item's data
-            item.setData(Qt.UserRole, sim_data['hash'])
-            
-            # Set a different color for run vs unrun simulations
-            if sim_data['has_run']:
-                item.setForeground(Qt.darkGreen)
+            # Create a list item with appropriate display text
+            item_text = f"{display_name} (#{sim_index})"
+            if has_run:
+                item_text += " [completed]"
             else:
-                item.setForeground(Qt.darkRed)
+                item_text += " [not run]"
+                
+            item = QListWidgetItem(item_text)
             
+            # Store simulation hash as item data
+            item.setData(Qt.UserRole, sim_hash)
+            
+            # Add to list
             self.simulation_list.addItem(item)
     
     def edit_description(self):
