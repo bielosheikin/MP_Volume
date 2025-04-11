@@ -1,5 +1,6 @@
 import os
 import time
+import traceback
 from typing import Dict, List, Optional, Any
 
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
@@ -14,11 +15,15 @@ from PyQt5.QtWidgets import QApplication
 
 from ..backend.simulation import Simulation
 from ..backend.simulation_suite import SimulationSuite
-from ..app_settings import DEBUG_LOGGING
 from .simulation_window import SimulationWindow
 from .simulation_manager import SimulationManager
 from .results_tab_suite import ResultsTabSuite
+from .. import app_settings
 
+def debug_print(*args, **kwargs):
+    """Wrapper for print that only prints if DEBUG_LOGGING is True"""
+    if app_settings.DEBUG_LOGGING:
+        print(*args, **kwargs)
 
 class SuiteWindow(QMainWindow):
     """
@@ -630,11 +635,12 @@ class SuiteWindow(QMainWindow):
             manager.start_simulation()
             
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error Running Simulation",
-                f"Failed to run simulation: {str(e)}"
-            )
+            # Update simulation status in UI
+            self.update_simulation_status(sim_hash, "Ran with errors")
+            
+            # Log the error
+            debug_print(f"Error running simulation: {str(e)}")
+            traceback.print_exc()
     
     def run_all_unrun_simulations(self):
         """Run all simulations that haven't been run yet"""
@@ -800,7 +806,7 @@ class SuiteWindow(QMainWindow):
             manager.start_simulation()
         
         except Exception as e:
-            print(f"Error running simulation: {str(e)}")
+            debug_print(f"Error running simulation: {str(e)}")
             
             # Continue with next simulation
             self._run_next_in_queue()

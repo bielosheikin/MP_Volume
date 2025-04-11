@@ -1,5 +1,13 @@
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from ..backend.simulation_worker import SimulationWorker
+from .. import app_settings
+import time
+import traceback
+
+def debug_print(*args, **kwargs):
+    """Wrapper for print that only prints if DEBUG_LOGGING is True"""
+    if app_settings.DEBUG_LOGGING:
+        print(*args, **kwargs)
 
 class SimulationManager(QObject):
     """
@@ -90,7 +98,7 @@ class SimulationManager(QObject):
                     self.thread.quit()
                     # Wait for thread to finish with a timeout
                     if not self.thread.wait(2000):  # 2 second timeout
-                        print("Warning: Thread not responding, terminating forcefully")
+                        debug_print("Warning: Thread not responding, terminating forcefully")
                         self.thread.terminate()
                         self.thread.wait()
                 
@@ -102,7 +110,7 @@ class SimulationManager(QObject):
                 self.worker = None
                 
         except Exception as e:
-            print(f"Error during cleanup: {str(e)}")
+            debug_print(f"Error during cleanup: {str(e)}")
             # Set references to None to allow garbage collection
             self.thread = None
             self.worker = None

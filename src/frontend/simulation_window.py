@@ -14,13 +14,17 @@ from ..backend.simulation_suite import SimulationSuite
 from ..backend.ion_species import IonSpecies
 from ..backend.ion_channels import IonChannel
 from ..backend.ion_and_channels_link import IonChannelsLink
-from ..app_settings import DEBUG_LOGGING
+from .. import app_settings
 
 from .vesicle_tab import VesicleTab
 from .ion_species_tab import IonSpeciesTab
 from .channels_tab import ChannelsTab
 from .simulation_tab import SimulationParamsTab
 
+def debug_print(*args, **kwargs):
+    """Wrapper for print that only prints if DEBUG_LOGGING is True"""
+    if app_settings.DEBUG_LOGGING:
+        print(*args, **kwargs)
 
 class SimulationWindow(QMainWindow):
     """
@@ -484,10 +488,10 @@ class SimulationWindow(QMainWindow):
                 f"An unexpected error occurred: {str(e)}\n\n"
                 f"Please check the logs for more details."
             )
-            if DEBUG_LOGGING:
+            if app_settings.DEBUG_LOGGING:
                 import traceback
-                print(f"Error in save_simulation: {str(e)}")
-                print(traceback.format_exc())
+                debug_print(f"Error in save_simulation: {str(e)}")
+                debug_print(traceback.format_exc())
     
     def confirm_close(self):
         """Show confirmation dialog before closing if there are unsaved changes"""
@@ -586,11 +590,11 @@ class SimulationWindow(QMainWindow):
                 if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                     # For numeric values, check if they're close enough (with a reasonable tolerance)
                     if abs(original_value - current_value) > 1e-6:
-                        if DEBUG_LOGGING:
+                        if app_settings.DEBUG_LOGGING:
                             print(f"Parameter {param} changed: {original_value} -> {current_value}")
                         return True
                 elif str(original_value).strip() != str(current_value).strip():
-                    if DEBUG_LOGGING:
+                    if app_settings.DEBUG_LOGGING:
                         print(f"Parameter {param} changed: '{original_value}' -> '{current_value}'")
                     return True
             
@@ -601,7 +605,7 @@ class SimulationWindow(QMainWindow):
                         current_value = current_data['vesicle_params'][key]
                         if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                             if abs(original_value - current_value) > 1e-6:
-                                if DEBUG_LOGGING:
+                                if app_settings.DEBUG_LOGGING:
                                     print(f"Vesicle param {key} changed: {original_value} -> {current_value}")
                                 return True
             
@@ -611,7 +615,7 @@ class SimulationWindow(QMainWindow):
                         current_value = current_data['exterior_params'][key]
                         if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                             if abs(original_value - current_value) > 1e-6:
-                                if DEBUG_LOGGING:
+                                if app_settings.DEBUG_LOGGING:
                                     print(f"Exterior param {key} changed: {original_value} -> {current_value}")
                                 return True
             
@@ -621,14 +625,14 @@ class SimulationWindow(QMainWindow):
                 
                 # Check if species count changed
                 if len(self.simulation.species) != len(current_species):
-                    if DEBUG_LOGGING:
+                    if app_settings.DEBUG_LOGGING:
                         print(f"Species count changed: {len(self.simulation.species)} -> {len(current_species)}")
                     return True
                 
                 # Check individual species parameters
                 for name, original_species in self.simulation.species.items():
                     if name not in current_species:
-                        if DEBUG_LOGGING:
+                        if app_settings.DEBUG_LOGGING:
                             print(f"Species '{name}' removed")
                         return True
                     
@@ -643,7 +647,7 @@ class SimulationWindow(QMainWindow):
                         if original_value is not None and current_value is not None:
                             if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                                 if abs(original_value - current_value) > 1e-6:
-                                    if DEBUG_LOGGING:
+                                    if app_settings.DEBUG_LOGGING:
                                         print(f"Species '{name}' param {param} changed: {original_value} -> {current_value}")
                                     return True
             
@@ -653,14 +657,14 @@ class SimulationWindow(QMainWindow):
                 
                 # Check if channel count changed
                 if len(self.simulation.channels) != len(current_channels):
-                    if DEBUG_LOGGING:
+                    if app_settings.DEBUG_LOGGING:
                         print(f"Channel count changed: {len(self.simulation.channels)} -> {len(current_channels)}")
                     return True
                 
                 # Check individual channel parameters
                 for name, original_channel in self.simulation.channels.items():
                     if name not in current_channels:
-                        if DEBUG_LOGGING:
+                        if app_settings.DEBUG_LOGGING:
                             print(f"Channel '{name}' removed")
                         return True
                     
@@ -669,7 +673,7 @@ class SimulationWindow(QMainWindow):
                     current_channel = current_channels[name]
                     if hasattr(original_channel, 'channel_type') and hasattr(current_channel, 'channel_type'):
                         if original_channel.channel_type != current_channel.channel_type:
-                            if DEBUG_LOGGING:
+                            if app_settings.DEBUG_LOGGING:
                                 print(f"Channel '{name}' type changed: {original_channel.channel_type} -> {current_channel.channel_type}")
                             return True
             
@@ -683,32 +687,32 @@ class SimulationWindow(QMainWindow):
                     
                     # Simple check: different number of primary ions
                     if len(original_links) != len(current_links):
-                        if DEBUG_LOGGING:
+                        if app_settings.DEBUG_LOGGING:
                             print(f"Ion channel links count changed: {len(original_links)} -> {len(current_links)}")
                         return True
                     
                     # Check links for each primary ion
                     for primary_ion, original_ion_links in original_links.items():
                         if primary_ion not in current_links:
-                            if DEBUG_LOGGING:
+                            if app_settings.DEBUG_LOGGING:
                                 print(f"Primary ion '{primary_ion}' links removed")
                             return True
                         
                         current_ion_links = current_links[primary_ion]
                         if len(original_ion_links) != len(current_ion_links):
-                            if DEBUG_LOGGING:
+                            if app_settings.DEBUG_LOGGING:
                                 print(f"Links count for '{primary_ion}' changed: {len(original_ion_links)} -> {len(current_ion_links)}")
                             return True
             
             # If we get here, no significant changes detected
-            if DEBUG_LOGGING:
-                print("No changes detected in simulation parameters")
+            if app_settings.DEBUG_LOGGING:
+                debug_print("No changes detected in simulation parameters")
             return False
             
         except Exception as e:
             # If there's an error in comparison, log it but err on the side of caution
-            if DEBUG_LOGGING:
-                print(f"Error checking for unsaved changes: {str(e)}")
+            if app_settings.DEBUG_LOGGING:
+                debug_print(f"Error checking for unsaved changes: {str(e)}")
                 import traceback
-                print(traceback.format_exc())
+                debug_print(traceback.format_exc())
             return True 
