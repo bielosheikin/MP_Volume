@@ -17,4 +17,11 @@ DEBUG_LOGGING = False
 
 # Maximum number of history points to store in memory
 # Lower values reduce memory usage but may affect graph resolution
-MAX_HISTORY_POINTS = 10000 
+MAX_HISTORY_POINTS = 10000
+
+# Use C++ backend for simulation calculations
+# When True, the application will try to use the C++ backend for simulation calculations,
+# which can significantly improve performance. If the C++ backend is not available,
+# it will fall back to the Python implementation.
+# Set to False to always use the Python implementation.
+USE_CPP_BACKEND = True 

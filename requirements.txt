@@ -16,6 +16,9 @@ python-dateutil==2.8.2
 setuptools>=69.0.0
 six==1.16.0
 
+# For C++ backend integration
+cmake>=3.10.0
+
 # Optional dependencies based on platform
 # Uncomment the appropriate line for your operating system
 #pywin32==306; platform_system == "Windows"

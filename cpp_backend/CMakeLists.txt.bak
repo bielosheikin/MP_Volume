@@ -1,0 +1,49 @@
+cmake_minimum_required(VERSION 3.10)
+project(MPVolumeSimulationEngine)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Add nlohmann/json (header-only library)
+include(FetchContent)
+FetchContent_Declare(json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz
+)
+FetchContent_MakeAvailable(json)
+
+include(FetchContent)
+FetchContent_Declare(json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(json)
+
+# Add nlohmann/json (header-only library)
+include(FetchContent)
+FetchContent_Declare(json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(json)
+
+# Source files
+set(SOURCE_FILES
+    src/main.cpp
+    src/Simulation.cpp
+    src/IonChannel.cpp
+    src/IonSpecies.cpp
+    src/Vesicle.cpp
+    src/Exterior.cpp
+    src/HistoriesStorage.cpp
+    src/FluxCalculationParameters.cpp
+)
+
+# Include directories
+include_directories(include)
+
+# Add executable
+add_executable(simulation_engine ${SOURCE_FILES})
+target_link_libraries(simulation_engine PRIVATE nlohmann_json::nlohmann_json)
+
+# Optimization flags for Release build
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3") 
