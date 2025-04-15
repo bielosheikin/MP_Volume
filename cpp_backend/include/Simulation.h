@@ -26,6 +26,9 @@ public:
     // Configuration from JSON
     void loadFromJson(const std::string& jsonConfig);
     
+    // Diagnostic methods
+    void printDetailedDiagnostics();
+    
     // Main simulation methods
     void runOneIteration();
     void run(std::function<void(int)> progressCallback = nullptr);

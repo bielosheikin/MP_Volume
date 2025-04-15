@@ -32,6 +32,7 @@ public:
     double getExteriorConc() const { return exteriorConc_; }
     double getElementaryCharge() const { return elementaryCharge_; }
     double getVesicleAmount() const { return vesicleAmount_; }
+    double getInitVesicleConc() const { return initVesicleConc_; }
     
     // Setters
     void setVesicleConc(double value);

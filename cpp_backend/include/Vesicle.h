@@ -31,7 +31,12 @@ public:
     double getArea() const { return area_; }
     double getCapacitance() const { return capacitance_; }
     double getCharge() const { return charge_; }
+    double getInitCharge() const { return initCharge_; }
     double getVoltage() const { return voltage_; }
+    double getInitVoltage() const { return initVoltage_; }
+    
+    // Additional setters
+    void setVoltage(double value) { voltage_ = value; }
     
     // Implement Trackable interface
     std::unordered_map<std::string, double> getCurrentState() const override {
