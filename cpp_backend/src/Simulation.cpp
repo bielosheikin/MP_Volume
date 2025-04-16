@@ -29,7 +29,8 @@ Simulation::Simulation(
     temperature_(2578.5871 / IDEAL_GAS_CONSTANT),
     initBufferCapacity_(5e-4),
     bufferCapacity_(initBufferCapacity_),
-    displayName_(displayName) {
+    displayName_(displayName),
+    unaccountedIonAmount_(0.0) {
     
     // Initialize storage for histories
     histories_ = std::make_shared<HistoriesStorage>();
@@ -293,10 +294,10 @@ void Simulation::run(std::function<void(int)> progressCallback) {
     std::cout << "\n=== SETTING ION AMOUNTS AT START OF RUN ===" << std::endl;
     setIonAmounts();
     
-    // Calculate unaccounted ion amount
+    // Calculate unaccounted ion amount ONCE at the start (like Python)
     std::cout << "\n=== CALCULATING UNACCOUNTED ION AMOUNT AT START OF RUN ===" << std::endl;
-    double unaccountedIonAmount = getUnaccountedIonAmount();
-    std::cout << "Unaccounted ion amount: " << unaccountedIonAmount << " mol" << std::endl;
+    unaccountedIonAmount_ = getUnaccountedIonAmount(); // Store the value
+    std::cout << "Unaccounted ion amount: " << unaccountedIonAmount_ << " mol" << std::endl;
     
     // Print state before starting iterations
     std::cout << "\n=== SIMULATION STATE BEFORE STARTING ITERATIONS ===" << std::endl;
@@ -438,8 +439,8 @@ double Simulation::getUnaccountedIonAmount() {
     double initVolume = vesicle_->getInitVolume();
     std::cout << "    Init volume: " << initVolume << " L" << std::endl;
     
-    // FIX: Remove the factor of 1000 to match Python implementation
-    double ionicChargeInMoles = totalIonicChargeConcentration * initVolume;
+    // Fix: Add the factor of 1000 to match Python implementation
+    double ionicChargeInMoles = totalIonicChargeConcentration * 1000 * initVolume;
     std::cout << "    Ionic charge in moles: " << ionicChargeInMoles << " mol" << std::endl;
     
     // Python formula is: charge_in_moles - (sum_of(conc * charge) * volume)
@@ -447,11 +448,11 @@ double Simulation::getUnaccountedIonAmount() {
     std::cout << "    Unaccounted charge: " << unaccountedCharge << " mol" << std::endl;
     
     // In Python, we're calculating exactly:
-    // Python: unaccounted_ion_amounts = initChargeInMoles - totalIonicChargeConcentration * initVolume
+    // Python: unaccounted_ion_amounts = initChargeInMoles - totalIonicChargeConcentration * 1000 * initVolume
     
     std::cout << "    Python calculation check:" << std::endl;
     std::cout << "      Init charge / FARADAY: " << initCharge << " / " << FARADAY_CONSTANT << " = " << initChargeInMoles << std::endl;
-    std::cout << "      Sum(z * c) * V: " << totalIonicChargeConcentration << " * " << initVolume << " = " << ionicChargeInMoles << std::endl;
+    std::cout << "      Sum(z * c) * 1000 * V: " << totalIonicChargeConcentration << " * 1000 * " << initVolume << " = " << ionicChargeInMoles << std::endl;
     std::cout << "      Difference: " << initChargeInMoles << " - " << ionicChargeInMoles << " = " << unaccountedCharge << std::endl;
     
     // For debug purposes, print with higher precision
@@ -535,13 +536,12 @@ void Simulation::updateCharge() {
     
     std::cout << "    Total ionic charge: " << totalIonicCharge << " mol" << std::endl;
     
-    // Add unaccounted ion amount to the total charge - MATCH PYTHON EXACTLY
-    double unaccountedIonAmount = getUnaccountedIonAmount();
-    std::cout << "    Unaccounted ion amount: " << unaccountedIonAmount << " mol" << std::endl;
+    // Add unaccounted ion amount to the total charge - USE STORED VALUE like Python
+    std::cout << "    Unaccounted ion amount: " << unaccountedIonAmount_ << " mol" << std::endl;
     
     // Python: self.vesicle.charge = ((sum(ion.elementary_charge * ion.vesicle_amount for ion in self.all_species) +
     //                                self.unaccounted_ion_amounts) * FARADAY_CONSTANT)
-    totalIonicCharge += unaccountedIonAmount;
+    totalIonicCharge += unaccountedIonAmount_; // Use stored value
     std::cout << "    Total charge with unaccounted: " << totalIonicCharge << " mol" << std::endl;
     
     // Convert to Coulombs

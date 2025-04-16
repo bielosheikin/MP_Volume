@@ -145,30 +145,37 @@ double IonChannel::computeLogTerm(const FluxCalculationParameters& params) {
             secondaryExteriorConc = params.exteriorHydrogenFree;
         }
         
-        // Calculate combined log term for two-ion channels
-        double numerator = std::pow(vesicleConc, primaryExponent_) * std::pow(secondaryVesicleConc, secondaryExponent_);
-        double denominator = std::pow(exteriorConc, primaryExponent_) * std::pow(secondaryExteriorConc, secondaryExponent_);
+        // FIXED: Match Python implementation order of operations
+        // Python uses exterior/vesicle for primary and vesicle/exterior for secondary
+        double primaryTerm = std::pow(exteriorConc / vesicleConc, primaryExponent_);
+        double secondaryTerm = std::pow(secondaryVesicleConc / secondaryExteriorConc, secondaryExponent_);
         
-        if (denominator <= 0 || numerator <= 0) {
+        double logTerm = primaryTerm * secondaryTerm;
+        
+        if (logTerm <= 0) {
             return 0.0; // Avoid log of zero or negative
         }
         
-        return std::log(numerator / denominator);
+        return std::log(logTerm);
     } 
     else {
         // Single ion channel
+        // FIXED: Match Python implementation for single ion channels
         if (exteriorConc <= 0 || vesicleConc <= 0) {
             return 0.0; // Avoid log of zero or negative
         }
         
-        return std::log(std::pow(vesicleConc / exteriorConc, primaryExponent_));
+        // Use exterior/vesicle to match Python
+        return std::log(std::pow(exteriorConc / vesicleConc, primaryExponent_));
     }
 }
 
 double IonChannel::computeNernstPotential(const FluxCalculationParameters& params) {
-    double nernstConstant;
+    // Get voltage from params
+    double voltage = params.voltage;
     
     // Use custom Nernst constant if provided, otherwise use the one from params
+    double nernstConstant;
     if (customNernstConstant_ != 0.0) {
         nernstConstant = customNernstConstant_;
     } else {
@@ -178,8 +185,11 @@ double IonChannel::computeNernstPotential(const FluxCalculationParameters& param
     // Calculate log term
     double logTerm = computeLogTerm(params);
     
-    // Compute Nernst potential
-    double potential = nernstConstant * logTerm;
+    // FIXED: Match Python implementation by including voltage and shifts
+    // Python: return (self.voltage_multiplier * voltage + (self.nernst_multiplier * nernst_constant * log_term) - self.voltage_shift)
+    double potential = voltageMultiplier_ * voltage + 
+                      (nernstMultiplier_ * nernstConstant * logTerm) - 
+                      voltageShift_;
     
     // Store for tracking
     nernstPotential_ = potential;
@@ -212,17 +222,13 @@ double IonChannel::computeFlux(const FluxCalculationParameters& params) {
     // Compute the Nernst potential
     double nernstPotential = computeNernstPotential(params);
     
-    // Calculate effective voltage with multipliers and shifts
-    double effectiveVoltage = params.voltage * voltageMultiplier_ - 
-                             nernstPotential * nernstMultiplier_ - 
-                             voltageShift_;
+    // FIXED: Match Python implementation flux calculation
+    // Python: flux = self.flux_multiplier * self.nernst_potential * self.conductance * area
+    double area = params.area;
+    double flux = fluxMultiplier_ * nernstPotential * conductance_ * area;
     
-    // Calculate flux
-    double flux = conductance_ * effectiveVoltage * pHDependence * 
-                 voltageDependence * timeDependence;
-    
-    // Apply flux multiplier
-    flux *= fluxMultiplier_;
+    // Apply dependencies
+    flux *= pHDependence * voltageDependence * timeDependence;
     
     // Update trackable fields
     flux_ = flux;

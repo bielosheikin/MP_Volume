@@ -69,6 +69,9 @@ private:
     double bufferCapacity_;
     std::string displayName_;
     
+    // Simulation state
+    double unaccountedIonAmount_; // Store unaccounted ion amount like Python
+    
     // Physical objects
     std::shared_ptr<Vesicle> vesicle_;
     std::shared_ptr<Exterior> exterior_;

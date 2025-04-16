@@ -88,22 +88,22 @@ def compare_calculations():
     print("\n=== C++ VALUES (FROM OUTPUT) ===")
     print("init_charge: 8.49487e-15 C")
     print("init_charge_in_moles (calculated): 8.80434e-20 mol")
-    print("Total ionic charge concentration: -0.15892 mol/L")
+    print("Total ionic charge concentration: -0.0039204 mol/L")
     print("init_volume: 9.20277e-18 L")
-    print("ionic_charge_in_moles (calculated): -1.46251e-15 mol")
-    print("unaccounted_ion_amount (calculated): 1.46259e-15 mol")
+    print("ionic_charge_in_moles (calculated): -3.60784e-20 mol")
+    print("unaccounted_ion_amount (calculated): 1.24122e-19 mol")
     
     print("\n=== COMPARISON OF KEY VALUES ===")
     print(f"Python init_charge: {format_scientific(init_charge)} C vs C++ init_charge: 8.49487e-15 C")
-    print(f"Python ionic_charge_conc: {format_scientific(ionic_charge_conc)} mol/L vs C++ ionic_charge_conc: -0.15892 mol/L")
+    print(f"Python ionic_charge_conc: {format_scientific(ionic_charge_conc)} mol/L vs C++ ionic_charge_conc: -0.0039204 mol/L")
     print(f"Python init_volume: {format_scientific(init_volume)} L vs C++ init_volume: 9.20277e-18 L")
     print(f"Python ionic_charge_in_moles: {format_scientific(ionic_charge_in_moles)} mol")
-    print("C++ ionic_charge_in_moles (calculated): -1.46251e-15 mol")
+    print("C++ ionic_charge_in_moles (calculated): -3.60784e-20 mol")
     print(f"Python unaccounted_ion_amount: {format_scientific(unaccounted_ion_amount)} mol")
-    print("C++ unaccounted_ion_amount (reported): 1.46259e-15 mol")
+    print("C++ unaccounted_ion_amount (reported): 1.24122e-19 mol")
     
     # Calculate ratio between Python and C++ unaccounted_ion_amount
-    cpp_unaccounted = 1.46259e-15
+    cpp_unaccounted = 1.24122e-19
     ratio = cpp_unaccounted / unaccounted_ion_amount
     print(f"\nRatio (C++ / Python): {format_scientific(ratio)}")
     
@@ -152,13 +152,13 @@ def compare_calculations():
     print(f"ionic_charge_in_moles_with_factor = ionic_charge_conc * 1000 * init_volume = {format_scientific(ionic_charge_in_moles_with_factor)} mol")
     print(f"unaccounted_with_factor = init_charge_in_moles - ionic_charge_in_moles_with_factor = {format_scientific(unaccounted_with_factor)} mol")
     
-    ratio_with_factor = 1.46259e-15 / unaccounted_with_factor
+    ratio_with_factor = 1.24122e-19 / unaccounted_with_factor
     print(f"Ratio (C++ / Python with factor): {format_scientific(ratio_with_factor)}")
     
     # Check if Na+ and K+ are missing from C++ calculation
     cl_charge_conc = -0.159  # Cl- has -1 charge and 0.159 M concentration
     h_charge_conc = 7.962143411069939e-05  # H+ has +1 charge and 7.96e-5 M concentration
-    cpp_reported_charge_conc = -0.15892
+    cpp_reported_charge_conc = -0.0039204
     
     print("\n=== CHECKING FOR MISSING IONS IN C++ CALCULATION ===")
     print(f"Cl- charge contribution: {format_scientific(cl_charge_conc)} mol/L")
@@ -177,7 +177,7 @@ def compare_calculations():
     print(f"\nlimited_ionic_charge_in_moles (only Cl- and H+): {format_scientific(limited_ionic_charge_in_moles)} mol")
     print(f"limited_unaccounted (only Cl- and H+): {format_scientific(limited_unaccounted)} mol")
     
-    ratio_limited = 1.46259e-15 / limited_unaccounted
+    ratio_limited = 1.24122e-19 / limited_unaccounted
     print(f"Ratio (C++ / Python with only Cl- and H+): {format_scientific(ratio_limited)}")
 
 if __name__ == "__main__":

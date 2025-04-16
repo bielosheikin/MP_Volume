@@ -9,6 +9,8 @@ import sys
 import json
 import numpy as np
 from pathlib import Path
+import subprocess
+import tempfile
 
 # Add the src directory to the Python path
 sys.path.append(str(Path(__file__).parent))
@@ -350,138 +352,316 @@ def check_unit_conversions():
     print("  6. Double initialization (e.g., setting values twice)")
     print("  7. Applying a flux before initialization is complete")
 
-def main():
-    """Main function to analyze configuration and initial state"""
-    print("Analyzing simulation initialization...")
+def get_python_config():
+    """Get the default configuration used by the Python simulation"""
+    sim = Simulation()
     
-    # Create and analyze a basic simulation
-    simulation = create_minimal_simulation()
+    # Extract species data
+    species_data = {}
+    for ion in sim.all_species:
+        species_data[ion.display_name] = {
+            "elementary_charge": ion.elementary_charge,
+            "init_vesicle_conc": ion.init_vesicle_conc,
+            "exterior_conc": ion.exterior_conc
+        }
     
-    # Add detailed debug for initial charge calculation in Python
-    print("\n=== DETAILED PYTHON CHARGE CALCULATION ===")
-    init_charge = simulation.vesicle.init_charge
-    print(f"Python init_charge: {init_charge} C")
-    init_charge_in_moles = init_charge / FARADAY_CONSTANT
-    print(f"Python init_charge_in_moles: {init_charge_in_moles} mol")
+    # Build config dictionary
+    config = {
+        "vesicle": {
+            "specific_capacitance": sim.vesicle.config.specific_capacitance,
+            "init_voltage": sim.vesicle.config.init_voltage,
+            "init_radius": sim.vesicle.config.init_radius,
+            "init_pH": sim.vesicle.config.init_pH
+        },
+        "ions": species_data,
+        "simulation": {
+            "time_step": sim.time_step,
+            "total_time": sim.total_time,
+            "buffer_capacity": sim.init_buffer_capacity
+        }
+    }
     
-    # Calculate sum(ion.elementary_charge * ion.init_vesicle_conc)
-    total_ionic_charge_concentration = sum(ion.elementary_charge * ion.init_vesicle_conc for ion in simulation.all_species)
-    print(f"Python sum(ion.elementary_charge * ion.init_vesicle_conc): {total_ionic_charge_concentration} mol/L")
+    return config
+
+def create_cpp_config():
+    """Create a JSON configuration file that would be passed to C++"""
+    config = get_python_config()
     
-    # Calculate the ionic charge in moles
-    init_volume = simulation.vesicle.init_volume
-    print(f"Python init_volume: {init_volume} L")
-    ionic_charge_in_moles = total_ionic_charge_concentration * 1000 * init_volume
-    print(f"Python ionic_charge_in_moles: {ionic_charge_in_moles} mol")
+    # Convert to format expected by C++
+    cpp_config = {
+        "time_step": config["simulation"]["time_step"],
+        "total_time": config["simulation"]["total_time"],
+        "init_buffer_capacity": config["simulation"]["buffer_capacity"],
+        "vesicle_params": {
+            "specific_capacitance": config["vesicle"]["specific_capacitance"],
+            "init_voltage": config["vesicle"]["init_voltage"],
+            "init_radius": config["vesicle"]["init_radius"],
+            "init_pH": config["vesicle"]["init_pH"]
+        },
+        "species": {}
+    }
     
-    # Calculate unaccounted ion amount
-    unaccounted_charge = init_charge_in_moles - ionic_charge_in_moles
-    print(f"Python unaccounted_charge (manual calc): {unaccounted_charge} mol")
+    # Add ion species
+    for ion_name, ion_data in config["ions"].items():
+        cpp_config["species"][ion_name] = {
+            "elementary_charge": ion_data["elementary_charge"],
+            "init_vesicle_conc": ion_data["init_vesicle_conc"],
+            "exterior_conc": ion_data["exterior_conc"]
+        }
     
-    # Output initial state values before any processing
-    print("\n=== INITIAL STATE (BEFORE setIonAmounts, getUnaccountedIonAmount) ===")
-    for ion in simulation.all_species:
-        print(f"Python: {ion.display_name} concentration = {ion.vesicle_conc}")
+    return cpp_config
+
+def save_and_print_cpp_config():
+    """Save the C++ config to a file and print it"""
+    cpp_config = create_cpp_config()
+    
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False, mode='w') as temp_file:
+        json.dump(cpp_config, temp_file, indent=2)
+        temp_file_path = temp_file.name
+    
+    print(f"Saved C++ configuration to: {temp_file_path}")
+    
+    # Print the config
+    print("\nC++ Configuration JSON:")
+    print(json.dumps(cpp_config, indent=2))
+    
+    return temp_file_path
+
+def check_test_cpp_backend():
+    """Check the test_cpp_backend.py script to see how it configures C++"""
+    test_cpp_path = "test_cpp_backend.py"
+    
+    try:
+        with open(test_cpp_path, 'r') as f:
+            test_cpp_content = f.read()
+            
+        print("\nAnalyzing test_cpp_backend.py...")
+        
+        # Look for json configuration
+        import re
+        config_json = re.search(r'config_json\s*=\s*(.+?)\s*\n', test_cpp_content)
+        if config_json:
+            print("Found config_json reference:")
+            print(config_json.group(0))
+        
+        # Look for Simulation creation
+        sim_creation = re.search(r'Simulation\([^)]*\)', test_cpp_content)
+        if sim_creation:
+            print("\nFound Simulation creation:")
+            print(sim_creation.group(0))
+            
+        # Look for JSON configuration creation
+        json_creation = re.search(r'json\.dumps\([^)]*\)', test_cpp_content)
+        if json_creation:
+            print("\nFound JSON configuration creation:")
+            print(json_creation.group(0))
+            
+    except Exception as e:
+        print(f"Error analyzing test_cpp_backend.py: {str(e)}")
+
+def check_compare_calculations():
+    """Check the compare_calculations.py script to see how it configures both Python and C++"""
+    compare_path = "compare_calculations.py"
+    
+    try:
+        with open(compare_path, 'r') as f:
+            compare_content = f.read()
+            
+        print("\nAnalyzing compare_calculations.py...")
+        
+        # Extract Python simulation creation
+        import re
+        py_sim = re.search(r'py_sim\s*=\s*Simulation\([^)]*\)', compare_content)
+        if py_sim:
+            print("Found Python simulation creation:")
+            print(py_sim.group(0))
+        
+        # Look for JSON configuration passed to C++
+        cpp_config = re.search(r'cpp_config\s*=\s*{[^}]*}', compare_content, re.DOTALL)
+        if cpp_config:
+            print("\nFound C++ configuration:")
+            print(cpp_config.group(0))
+            
+        # Look for ions in configuration
+        ions_config = re.search(r'"ions":\s*\[[^]]*\]', compare_content, re.DOTALL)
+        if ions_config:
+            print("\nFound ions configuration:")
+            print(ions_config.group(0))
+            
+    except Exception as e:
+        print(f"Error analyzing compare_calculations.py: {str(e)}")
+
+def run_minimal_cpp_test():
+    """Create and run a minimal C++ test with explicit ion configuration"""
+    cpp_config = {
+        "time_step": 0.001,
+        "total_time": 0.01,
+        "vesicle_params": {
+            "specific_capacitance": 0.01,
+            "init_voltage": 0.04,
+            "init_radius": 1.3e-6,
+            "init_pH": 7.1
+        },
+        "species": {
+            "cl": {
+                "elementary_charge": -1,
+                "init_vesicle_conc": 0.159,
+                "exterior_conc": 0.159
+            },
+            "h": {
+                "elementary_charge": 1,
+                "init_vesicle_conc": 7.962143411069939e-05,
+                "exterior_conc": 7.962143411069939e-05
+            },
+            "na": {
+                "elementary_charge": 1,
+                "init_vesicle_conc": 0.15,
+                "exterior_conc": 0.15
+            },
+            "k": {
+                "elementary_charge": 1,
+                "init_vesicle_conc": 0.005,
+                "exterior_conc": 0.005
+            }
+        }
+    }
+    
+    # Save to temporary file
+    temp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.json', delete=False, mode='w') as temp_file:
+            json.dump(cpp_config, temp_file, indent=2)
+            temp_file_path = temp_file.name
+    
+        print(f"Saved explicit C++ configuration to: {temp_file_path}")
+        
+        # Try to run C++ backend with this config if available
+        try:
+            cmd = ["cpp_backend/build/standalone/run_simulation", temp_file_path, "--debug"]
+            print(f"\nAttempting to run C++ with command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print("\nC++ execution successful!")
+                
+                # Check for ion species in output
+                output = result.stdout
+                
+                # Count occurrences of each ion
+                import re
+                ion_counts = {}
+                for ion in ["cl", "h", "na", "k"]:
+                    count = len(re.findall(rf'Ion: {ion}\b', output))
+                    ion_counts[ion] = count
+                
+                print("\nIon mentions in C++ output:")
+                for ion, count in ion_counts.items():
+                    print(f"  {ion}: mentioned {count} times")
+                
+                # Check for charge calculation
+                charge_calc = re.search(r'updateCharge calculation:.*?Final charge:', output, re.DOTALL)
+                if charge_calc:
+                    print("\nCharge calculation found in output:")
+                    charge_text = charge_calc.group(0)
+                    
+                    # Find which ions are included
+                    ion_contributions = re.findall(r'(\w+): .* = ([-+]?\d*\.\d+[eE][-+]?\d+|\d+\.\d+) mol', charge_text)
+                    
+                    print("\nIons included in charge calculation:")
+                    for ion, value in ion_contributions:
+                        print(f"  {ion}: {value}")
+                    
+                    # Check for missing ions
+                    ions_in_calc = [ion[0] for ion in ion_contributions]
+                    missing_ions = [ion for ion in ["cl", "h", "na", "k"] if ion not in ions_in_calc]
+                    
+                    if missing_ions:
+                        print(f"\nWARNING: The following ions are missing from the charge calculation: {', '.join(missing_ions)}")
+                        print("This is likely the cause of the discrepancy between Python and C++.")
+                    else:
+                        print("\nAll expected ions are included in the charge calculation.")
+                
+                # Extract total charge value
+                charge_value = re.search(r'Charge in Coulombs: ([-+]?\d*\.\d+[eE][-+]?\d+|\d+\.\d+)', output)
+                if charge_value:
+                    cpp_charge = float(charge_value.group(1))
+                    print(f"\nFinal charge in C++: {cpp_charge} C")
+                    
+                    # Compare with Python value
+                    sim = Simulation()
+                    sim.set_ion_amounts()
+                    sim.get_unaccounted_ion_amount()
+                    sim.update_charge()
+                    py_charge = sim.vesicle.charge
+                    
+                    print(f"Final charge in Python: {py_charge} C")
+                    print(f"Difference: {py_charge - cpp_charge} C")
+                    
+                    # Calculate what the charge would be with each ion
+                    print("\nIndividual ion contributions to charge (Python):")
+                    for ion in sim.all_species:
+                        contribution = ion.elementary_charge * ion.vesicle_amount
+                        print(f"  {ion.display_name}: {contribution} mol")
+                
+            else:
+                print("\nC++ execution failed with error:")
+                print(result.stderr)
+                
+        except Exception as e:
+            print(f"Error running C++ backend: {str(e)}")
+    
+    finally:
+        # Clean up temporary file
+        if temp_file_path:
+            try:
+                Path(temp_file_path).unlink()
+            except:
+                pass
+
+def print_python_ion_details():
+    """Print detailed information about ions in Python simulation"""
+    sim = Simulation()
+    
+    # Print ion concentrations
+    print("\nIon concentrations (Python):")
+    for ion in sim.all_species:
+        print(f"{ion.display_name}: {ion.init_vesicle_conc} M (charge: {ion.elementary_charge})")
     
     # Set ion amounts
-    simulation.set_ion_amounts()
+    sim.set_ion_amounts()
     
-    # Output state after set_ion_amounts
-    print("\n=== STATE AFTER set_ion_amounts ===")
-    for ion in simulation.all_species:
-        print(f"Python: {ion.display_name} amount = {ion.vesicle_amount}, concentration = {ion.vesicle_conc}")
+    # Print ion amounts
+    print("\nIon amounts after set_ion_amounts (Python):")
+    for ion in sim.all_species:
+        print(f"{ion.display_name}: {ion.vesicle_amount} mol (contributes {ion.elementary_charge * ion.vesicle_amount} mol to charge)")
     
-    # Calculate unaccounted ion amount
-    simulation.get_unaccounted_ion_amount()
+    # Calculate unaccounted
+    sim.get_unaccounted_ion_amount()
+    print(f"\nUnaccounted ion amount: {sim.unaccounted_ion_amounts} mol")
     
-    # Output state after get_unaccounted_ion_amount
-    print("\n=== STATE AFTER get_unaccounted_ion_amount ===")
-    print(f"Python: unaccounted_ion_amounts = {simulation.unaccounted_ion_amounts}")
-    for ion in simulation.all_species:
-        print(f"Python: {ion.display_name} amount = {ion.vesicle_amount}, concentration = {ion.vesicle_conc}")
+    # Calculate total charge
+    sim.update_charge()
+    print(f"Total charge: {sim.vesicle.charge} C")
+
+def main():
+    """Main function to analyze configuration and initial state"""
+    print("=== ANALYZING CONFIGURATION DIFFERENCES BETWEEN PYTHON AND C++ ===")
     
-    # Add more detailed debug for vesicle properties
-    print("\n=== DETAILED VESICLE PROPERTIES (PYTHON) ===")
-    print(f"init_radius: {simulation.vesicle.init_radius} m")
-    print(f"init_volume: {simulation.vesicle.init_volume} L")
-    print(f"volume: {simulation.vesicle.volume} L")
-    print(f"init_area: {4 * np.pi * simulation.vesicle.init_radius**2} m²")
-    print(f"area: {simulation.vesicle.area} m²")
-    print(f"init_charge: {simulation.vesicle.init_charge} C")
-    print(f"charge: {simulation.vesicle.charge} C")
-    print(f"specific_capacitance: {simulation.vesicle.specific_capacitance} F/m²")
-    print(f"init_capacitance: {4 * np.pi * simulation.vesicle.init_radius**2 * simulation.vesicle.specific_capacitance} F")
-    print(f"capacitance: {simulation.vesicle.capacitance} F")
-    print(f"init_voltage: {simulation.vesicle.init_voltage} V")
-    print(f"voltage: {simulation.vesicle.voltage} V")
+    # Print Python ion details
+    print_python_ion_details()
     
-    config = extract_and_analyze_config(simulation)
+    # Check test_cpp_backend.py
+    check_test_cpp_backend()
     
-    # Create a simplified test configuration
-    simplified_config = create_simplified_config()
+    # Check compare_calculations.py
+    check_compare_calculations()
     
-    # Check for potential unit conversion issues
-    check_unit_conversions()
+    # Save and print the C++ configuration
+    cpp_config_path = save_and_print_cpp_config()
     
-    # Run minimal C++ simulation and print initial results
-    print("\n=== CHECKING C++ INITIALIZATION ===")
-    try:
-        import subprocess
-        import tempfile
-        import json
-        import os
-        
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_config:
-            temp_config_path = temp_config.name
-            json.dump(simplified_config, temp_config)
-        
-        # Run C++ simulation with just initialization
-        cpp_executable = os.path.join("cpp_backend", "build", "Release", "simulation_engine.exe")
-        
-        print(f"Running C++ simulation with minimal config: {cpp_executable}")
-        try:
-            result = subprocess.run([cpp_executable, temp_config_path, "--init-only"], 
-                                   capture_output=True, text=True, check=True)
-            
-            # Print C++ output
-            print("\nC++ Initialization Output:")
-            for line in result.stdout.split('\n'):
-                if "Initializing with" in line or "initial" in line.lower() or "concentration" in line.lower():
-                    print(f"  {line.strip()}")
-            
-            # Check if the C++ simulation created an output file with initialization values
-            init_values_path = temp_config_path + ".init"
-            if os.path.exists(init_values_path):
-                with open(init_values_path, 'r') as f:
-                    cpp_init = json.load(f)
-                    print("\nC++ Initial Values:")
-                    for ion, values in cpp_init.get("species", {}).items():
-                        print(f"  C++: {ion} concentration = {values.get('vesicle_conc', 'N/A')}")
-                        print(f"  C++: {ion} amount = {values.get('vesicle_amount', 'N/A')}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error running C++ simulation: {e}")
-            print(f"Stdout: {e.stdout}")
-            print(f"Stderr: {e.stderr}")
-        except FileNotFoundError:
-            print(f"C++ executable not found at {cpp_executable}")
-        finally:
-            # Clean up temporary files
-            if os.path.exists(temp_config_path):
-                os.remove(temp_config_path)
-            if os.path.exists(init_values_path):
-                os.remove(init_values_path)
-    except Exception as e:
-        print(f"Error checking C++ initialization: {e}")
-    
-    print("\nAnalysis complete. The detailed configs have been saved to JSON files.")
-    print("Next steps:")
-    print("1. Compare the initial values in Python with the first values from C++")
-    print("2. Check the C++ code for initialization bugs, especially around pH and voltage")
-    print("3. Look for unit conversion issues or sign flips in the C++ code")
-    print("4. Try running the C++ simulation with the minimal_test_config.json")
-    
-    return 0
+    # Run a minimal C++ test with explicit ion configuration
+    run_minimal_cpp_test()
 
 if __name__ == "__main__":
-    exit(main()) 
+    main() 
