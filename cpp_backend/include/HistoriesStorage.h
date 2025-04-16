@@ -37,6 +37,9 @@ public:
     // Update histories with current state of all objects
     void updateHistories();
     
+    // Add a value directly to a history
+    void addHistory(const std::string& name, double value);
+    
     // Reset/clear histories
     void flushHistories();
     void reset();

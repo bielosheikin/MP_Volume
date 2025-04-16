@@ -28,6 +28,7 @@ public:
     
     // Diagnostic methods
     void printDetailedDiagnostics();
+    void printFinalValues();
     
     // Main simulation methods
     void runOneIteration();
@@ -44,7 +45,7 @@ public:
     void updateVoltage();
     void updateBuffer();
     void updatePH();
-    void updateIonAmounts(const std::unordered_map<std::string, double>& fluxes);
+    void updateIonAmounts(const std::vector<double>& fluxes);
     void updateVesicleConcentrations();
     void updateSimulationState();
     

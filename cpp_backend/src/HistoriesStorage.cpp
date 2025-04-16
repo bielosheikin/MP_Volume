@@ -104,4 +104,8 @@ nlohmann::json HistoriesStorage::toJson() const {
     }
     
     return result;
+}
+
+void HistoriesStorage::addHistory(const std::string& name, double value) {
+    histories_[name].push_back(value);
 } 

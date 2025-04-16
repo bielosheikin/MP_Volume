@@ -34,9 +34,11 @@ public:
     double getInitCharge() const { return initCharge_; }
     double getVoltage() const { return voltage_; }
     double getInitVoltage() const { return initVoltage_; }
+    double getInitPH() const { return initPH_; }
     
     // Additional setters
     void setVoltage(double value) { voltage_ = value; }
+    void setCharge(double value) { charge_ = value; }
     
     // Implement Trackable interface
     std::unordered_map<std::string, double> getCurrentState() const override {
