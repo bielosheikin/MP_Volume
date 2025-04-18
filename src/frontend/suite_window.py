@@ -435,6 +435,28 @@ class SuiteWindow(QMainWindow):
         # Get the simulation hash from the item
         sim_hash = selected_items[0].data(Qt.UserRole)
         
+        # Find if this simulation is marked as problematic
+        is_problematic = False
+        for sim in self.suite.list_simulations(skip_problematic=False):
+            if sim["hash"] == sim_hash and sim.get("is_problematic", False):
+                is_problematic = True
+                break
+        
+        # If the simulation is problematic, show a warning
+        if is_problematic:
+            reply = QMessageBox.question(
+                self,
+                "Warning: Problematic Simulation",
+                "This simulation appears to be corrupted or has issues.\n"
+                "Attempting to open it may fail or cause unexpected behavior.\n\n"
+                "Do you want to try to open it anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.No:
+                return
+        
         # Check if we already have this simulation window open
         if sim_hash in self.simulation_windows and self.simulation_windows[sim_hash].isVisible():
             # If the window is already open, just bring it to the front
@@ -443,25 +465,87 @@ class SuiteWindow(QMainWindow):
             return
         
         # Load the simulation from the suite
-        simulation = self.suite.get_simulation(sim_hash)
-        if not simulation:
-            QMessageBox.critical(
+        try:
+            if app_settings.DEBUG_LOGGING:
+                print(f"Attempting to load simulation with hash {sim_hash}")
+                
+            simulation = self.suite.get_simulation(sim_hash)
+            
+            if app_settings.DEBUG_LOGGING:
+                if simulation:
+                    print(f"Simulation loaded successfully: {simulation.display_name}")
+                    print(f"Has config attribute: {hasattr(simulation, 'config')}")
+                    if hasattr(simulation, 'config'):
+                        print(f"Config type: {type(simulation.config)}")
+                        print(f"Config has species: {hasattr(simulation.config, 'species')}")
+                        print(f"Config has channels: {hasattr(simulation.config, 'channels')}")
+                else:
+                    print(f"Failed to load simulation with hash {sim_hash}")
+            
+            if not simulation:
+                QMessageBox.critical(
+                    self,
+                    "Error Loading Simulation",
+                    f"Failed to load simulation with hash {sim_hash}"
+                )
+                return
+            
+            # Check if the simulation has a valid config attribute
+            if not hasattr(simulation, 'config'):
+                error_msg = "The loaded simulation is missing its configuration data. This may be due to a change in how simulations are saved and loaded."
+                QMessageBox.critical(
+                    self,
+                    "Invalid Simulation Data",
+                    error_msg
+                )
+                return
+            
+            # Create and show the simulation window
+            sim_window = SimulationWindow(self.suite, simulation, parent=self)
+            
+            # Connect the simulation_saved signal to refresh our list
+            sim_window.simulation_saved.connect(self.on_simulation_saved)
+            
+            sim_window.show()
+            
+            # Store a reference to keep it from being garbage collected
+            self.simulation_windows[sim_hash] = sim_window
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            
+            if app_settings.DEBUG_LOGGING:
+                print(f"Error opening simulation: {str(e)}")
+                print(f"Traceback: {error_trace}")
+                
+            # Show error dialog with option to see details
+            reply = QMessageBox.critical(
                 self,
-                "Error Loading Simulation",
-                f"Failed to load simulation with hash {sim_hash}"
+                "Error Opening Simulation",
+                f"An error occurred while opening the simulation:\n\n{str(e)}\n\n"
+                f"Would you like to see the detailed error? This may help with debugging.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
             )
-            return
-        
-        # Create and show the simulation window
-        sim_window = SimulationWindow(self.suite, simulation, parent=self)
-        
-        # Connect the simulation_saved signal to refresh our list
-        sim_window.simulation_saved.connect(self.on_simulation_saved)
-        
-        sim_window.show()
-        
-        # Store a reference to keep it from being garbage collected
-        self.simulation_windows[sim_hash] = sim_window
+            
+            if reply == QMessageBox.Yes:
+                # Show detailed error dialog
+                error_dialog = QDialog(self)
+                error_dialog.setWindowTitle("Detailed Error Information")
+                error_dialog.setMinimumSize(800, 400)
+                
+                layout = QVBoxLayout(error_dialog)
+                
+                error_text = QTextEdit()
+                error_text.setReadOnly(True)
+                error_text.setPlainText(f"Error: {str(e)}\n\nTraceback:\n{error_trace}")
+                layout.addWidget(error_text)
+                
+                close_button = QPushButton("Close")
+                close_button.clicked.connect(error_dialog.close)
+                layout.addWidget(close_button)
+                
+                error_dialog.exec_()
     
     def update_simulation_details(self):
         """Update the details view based on the currently selected simulation"""

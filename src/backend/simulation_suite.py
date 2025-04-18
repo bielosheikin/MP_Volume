@@ -122,31 +122,79 @@ class SimulationSuite:
         pickle_path = os.path.join(sim_path, "simulation.pickle")
         config_path = os.path.join(sim_path, "config.json")
         
+        if DEBUG_LOGGING:
+            print(f"\n=== STARTING SIMULATION LOAD FOR {simulation_hash} ===")
+            print(f"Simulation path: {sim_path}")
+            print(f"Config file exists: {os.path.exists(config_path)}")
+            print(f"Pickle file exists: {os.path.exists(pickle_path)}")
+        
         try:
             # First try to get config from config.json (most reliable source)
             if os.path.exists(config_path):
                 if DEBUG_LOGGING:
-                    print(f"Loading simulation from config.json: {config_path}")
-                return self._reconstruct_simulation(simulation_hash, sim_path)
-            
-            # If config.json doesn't exist, try to load from pickle
-            elif os.path.exists(pickle_path):
-                # Try to load the simulation from pickle
-                with open(pickle_path, 'rb') as f:
-                    pickle_data = pickle.load(f)
+                    print(f"\n1. Attempting to load simulation from config.json: {config_path}")
+                
+                simulation = self._reconstruct_simulation(simulation_hash, sim_path)
                 
                 if DEBUG_LOGGING:
-                    print(f"Reconstructing simulation from pickle data")
-                return self._reconstruct_simulation(simulation_hash, sim_path, pickle_data)
+                    print(f"1. Result from _reconstruct_simulation: {'Success' if simulation else 'Failed'}")
+                    if simulation:
+                        print(f"   Simulation has config: {hasattr(simulation, 'config')}")
+                        if hasattr(simulation, 'config'):
+                            print(f"   Config has species: {hasattr(simulation.config, 'species')}")
+                            print(f"   Config has channels: {hasattr(simulation.config, 'channels')}")
+                
+                if simulation:
+                    if DEBUG_LOGGING:
+                        print(f"1. Successfully loaded simulation from config.json")
+                    return simulation
             
-            else:
+            # If config.json doesn't exist or reconstruction failed, try to load from pickle
+            if os.path.exists(pickle_path):
+                # Try to load the simulation from pickle
                 if DEBUG_LOGGING:
-                    print(f"Warning: No simulation data found for {simulation_hash}")
-                return None
+                    print(f"\n2. Attempting to load simulation from pickle data: {pickle_path}")
+                
+                try:
+                    with open(pickle_path, 'rb') as f:
+                        pickle_data = pickle.load(f)
+                    
+                    if DEBUG_LOGGING:
+                        print(f"2. Pickle data loaded successfully")
+                        print(f"   Pickle data type: {type(pickle_data)}")
+                        if isinstance(pickle_data, dict):
+                            print(f"   Pickle data keys: {list(pickle_data.keys())}")
+                    
+                    simulation = self._reconstruct_simulation(simulation_hash, sim_path, pickle_data)
+                    
+                    if DEBUG_LOGGING:
+                        print(f"2. Result from _reconstruct_simulation with pickle: {'Success' if simulation else 'Failed'}")
+                        if simulation:
+                            print(f"   Simulation has config: {hasattr(simulation, 'config')}")
+                            if hasattr(simulation, 'config'):
+                                print(f"   Config has species: {hasattr(simulation.config, 'species')}")
+                                print(f"   Config has channels: {hasattr(simulation.config, 'channels')}")
+                    
+                    if simulation:
+                        if DEBUG_LOGGING:
+                            print(f"2. Successfully loaded simulation from pickle data")
+                        return simulation
+                except Exception as e:
+                    if DEBUG_LOGGING:
+                        import traceback
+                        print(f"2. Error loading pickle data: {str(e)}")
+                        print(f"   {traceback.format_exc()}")
+            
+            # If both methods failed
+            if DEBUG_LOGGING:
+                print(f"\n3. Failed to load simulation {simulation_hash} from any source")
+            return None
             
         except Exception as e:
             if DEBUG_LOGGING:
-                print(f"Warning: Failed to load simulation from {sim_path}: {str(e)}")
+                import traceback
+                print(f"\n!!! Exception in _load_simulation: {str(e)}")
+                print(f"!!! Traceback: {traceback.format_exc()}")
             return None
     
     def _reconstruct_simulation(self, simulation_hash, sim_path, pickle_data=None):
@@ -162,98 +210,389 @@ class SimulationSuite:
         Returns:
             A reconstructed Simulation object or None if reconstruction failed
         """
+        if DEBUG_LOGGING:
+            print(f"\n=== RECONSTRUCTING SIMULATION FOR {simulation_hash} ===")
+            print(f"Using pickle_data: {'Yes' if pickle_data else 'No'}")
+            if pickle_data:
+                print(f"Pickle data type: {type(pickle_data)}")
+                if isinstance(pickle_data, dict):
+                    print(f"Pickle data keys: {list(pickle_data.keys())}")
+        
         try:
             # First try to get config from config.json (most reliable source)
             config_path = os.path.join(sim_path, "config.json")
             if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    config_data = json.load(f)
+                if DEBUG_LOGGING:
+                    print(f"\nA. Reading config.json")
                 
-                metadata = config_data.get("metadata", {})
-                sim_config = config_data.get("simulation", {})
-                
-                # Create a new simulation with the basic parameters
-                # Extract the essential parameters
-                sim_index = metadata.get("index", 1)
-                display_name = sim_config.get("display_name", "Reconstructed Simulation")
-                time_step = float(sim_config.get("time_step", 0.001))
-                total_time = float(sim_config.get("total_time", 100.0))
-                temperature = float(sim_config.get("temperature", 310.0))
-                has_run = metadata.get("has_run", False)
-                
-                # Create the simulation
-                sim = Simulation(
-                    display_name=display_name,
-                    time_step=time_step,
-                    total_time=total_time,
-                    temperature=temperature,
-                    simulations_path=self.suite_path
-                )
-                
-                # Set additional properties
-                sim.simulation_index = sim_index
-                sim.has_run = has_run
-                
-                # Try to set other configuration parameters from sim_config
                 try:
-                    for key, value in sim_config.items():
-                        if hasattr(sim.config, key) and key not in ['display_name', 'time_step', 'total_time', 'temperature']:
-                            setattr(sim.config, key, value)
+                    with open(config_path, 'r') as f:
+                        config_data = json.load(f)
+                    
+                    if DEBUG_LOGGING:
+                        print(f"A. Successfully read config.json")
+                        print(f"   Config data keys: {list(config_data.keys())}")
+                    
+                    metadata = config_data.get("metadata", {})
+                    sim_config = config_data.get("simulation", {})
+                    
+                    if DEBUG_LOGGING:
+                        print(f"   Metadata keys: {list(metadata.keys())}")
+                        print(f"   Simulation config keys: {list(sim_config.keys())}")
+                    
+                    # Create a new simulation with the basic parameters
+                    # Extract the essential parameters
+                    sim_index = metadata.get("index", 1)
+                    display_name = sim_config.get("display_name", "Reconstructed Simulation")
+                    time_step = float(sim_config.get("time_step", 0.001))
+                    total_time = float(sim_config.get("total_time", 100.0))
+                    temperature = float(sim_config.get("temperature", 310.0))
+                    has_run = metadata.get("has_run", False)
+                    
+                    if DEBUG_LOGGING:
+                        print(f"   Extracted basic parameters:")
+                        print(f"     - display_name: {display_name}")
+                        print(f"     - time_step: {time_step}")
+                        print(f"     - total_time: {total_time}")
+                        print(f"     - temperature: {temperature}")
+                        print(f"     - sim_index: {sim_index}")
+                        print(f"     - has_run: {has_run}")
+                    
+                    # Prepare the simulation parameters
+                    sim_kwargs = {
+                        "display_name": display_name,
+                        "time_step": time_step,
+                        "total_time": total_time,
+                        "temperature": temperature,
+                        "simulations_path": self.suite_path
+                    }
+                    
+                    if DEBUG_LOGGING:
+                        print(f"A. Preparing complex objects for simulation")
+                    
+                    # Extract and properly convert complex objects
+                    
+                    # Species
+                    if "species" in sim_config:
+                        if DEBUG_LOGGING:
+                            print(f"   Processing species data...")
+                        
+                        from src.backend.ion_species import IonSpecies
+                        species = {}
+                        
+                        for name, species_data in sim_config.get("species", {}).items():
+                            if isinstance(species_data, dict):
+                                if DEBUG_LOGGING:
+                                    print(f"     Species {name}: {list(species_data.keys())}")
+                                
+                                # Create IonSpecies with extracted data
+                                species[name] = IonSpecies(
+                                    display_name=name,
+                                    init_vesicle_conc=species_data.get("init_vesicle_conc", 0.0),
+                                    exterior_conc=species_data.get("exterior_conc", 0.0),
+                                    elementary_charge=species_data.get("elementary_charge", 1)
+                                )
+                        
+                        sim_kwargs["species"] = species
+                        
+                        if DEBUG_LOGGING:
+                            print(f"   Added {len(species)} species")
+                    
+                    # Channels
+                    if "channels" in sim_config:
+                        if DEBUG_LOGGING:
+                            print(f"   Processing channels data...")
+                        
+                        from src.backend.ion_channels import IonChannel
+                        channels = {}
+                        
+                        for name, channel_data in sim_config.get("channels", {}).items():
+                            if isinstance(channel_data, dict):
+                                if DEBUG_LOGGING:
+                                    print(f"     Channel {name}: {list(channel_data.keys())}")
+                                
+                                # Create IonChannel with extracted data
+                                channel_params = {k: v for k, v in channel_data.items() 
+                                               if k not in ["__class__", "__module__", "display_name"]}
+                                channels[name] = IonChannel(display_name=name, **channel_params)
+                        
+                        sim_kwargs["channels"] = channels
+                        
+                        if DEBUG_LOGGING:
+                            print(f"   Added {len(channels)} channels")
+                    
+                    # Ion channel links
+                    if "ion_channel_links" in sim_config:
+                        if DEBUG_LOGGING:
+                            print(f"   Processing ion channel links...")
+                        
+                        from src.backend.ion_and_channels_link import IonChannelsLink
+                        links_data = sim_config.get("ion_channel_links", {})
+                        
+                        if isinstance(links_data, dict) and "links" in links_data:
+                            if DEBUG_LOGGING:
+                                print(f"     Found links data: {list(links_data.keys())}")
+                            
+                            ion_channel_links = IonChannelsLink(use_defaults=False)
+                            ion_channel_links.links = links_data["links"]
+                        else:
+                            if DEBUG_LOGGING:
+                                print(f"     No valid links data, using defaults")
+                            
+                            ion_channel_links = IonChannelsLink(use_defaults=True)
+                        
+                        sim_kwargs["ion_channel_links"] = ion_channel_links
+                    
+                    # Vesicle and exterior parameters
+                    if "vesicle_params" in sim_config:
+                        sim_kwargs["vesicle_params"] = sim_config.get("vesicle_params")
+                        if DEBUG_LOGGING:
+                            print(f"   Added vesicle_params")
+                    
+                    if "exterior_params" in sim_config:
+                        sim_kwargs["exterior_params"] = sim_config.get("exterior_params")
+                        if DEBUG_LOGGING:
+                            print(f"   Added exterior_params")
+                    
+                    if DEBUG_LOGGING:
+                        print(f"A. Creating Simulation object with prepared parameters")
+                    
+                    # Create the simulation
+                    from src.backend.simulation import Simulation
+                    sim = Simulation(**sim_kwargs)
+                    
+                    if DEBUG_LOGGING:
+                        print(f"A. Simulation object created successfully")
+                        print(f"   Setting additional properties")
+                    
+                    # Set additional properties
+                    sim.simulation_index = sim_index
+                    sim.has_run = has_run
+                    
+                    if DEBUG_LOGGING:
+                        print(f"A. Successfully reconstructed simulation from config.json")
+                        print(f"   Simulation has config: {hasattr(sim, 'config')}")
+                        if hasattr(sim, 'config'):
+                            print(f"   Config has species: {hasattr(sim.config, 'species')}")
+                            print(f"   Config has channels: {hasattr(sim.config, 'channels')}")
+                    
+                    return sim
                 except Exception as e:
                     if DEBUG_LOGGING:
-                        print(f"Warning: Failed to set some configuration parameters: {str(e)}")
-                
-                if DEBUG_LOGGING:
-                    print(f"Successfully reconstructed simulation from config.json")
-                
-                return sim
+                        import traceback
+                        print(f"A. Error reconstructing from config.json: {str(e)}")
+                        print(f"   {traceback.format_exc()}")
             
             # If config.json doesn't exist or fails, try using pickle_data
-            elif pickle_data and isinstance(pickle_data, dict):
-                metadata = pickle_data.get("metadata", {})
-                sim_config = pickle_data.get("simulation_config", {})
+            if pickle_data is not None:
+                if DEBUG_LOGGING:
+                    print(f"\nB. Reconstructing from pickle data")
+                    if isinstance(pickle_data, dict):
+                        print(f"   Pickle data keys: {list(pickle_data.keys())}")
                 
-                # Extract essential parameters, falling back to pickle_data directly if nested dicts don't exist
-                sim_index = metadata.get("index", pickle_data.get("simulation_index", 1))
-                display_name = sim_config.get("display_name", pickle_data.get("display_name", "Reconstructed Simulation"))
-                time_step = float(sim_config.get("time_step", 0.001))
-                total_time = float(sim_config.get("total_time", 100.0))
-                temperature = float(sim_config.get("temperature", 310.0))
-                has_run = metadata.get("has_run", pickle_data.get("has_run", False))
-                
-                # Create the simulation
-                sim = Simulation(
-                    display_name=display_name,
-                    time_step=time_step,
-                    total_time=total_time,
-                    temperature=temperature,
-                    simulations_path=self.suite_path
-                )
-                
-                # Set additional properties
-                sim.simulation_index = sim_index
-                sim.has_run = has_run
-                
-                # Try to set other configuration parameters from sim_config
                 try:
-                    for key, value in sim_config.items():
-                        if hasattr(sim.config, key) and key not in ['display_name', 'time_step', 'total_time', 'temperature']:
-                            setattr(sim.config, key, value)
+                    # Check pickle data structure and extract config
+                    if isinstance(pickle_data, dict):
+                        # Handle different pickle data structures
+                        metadata = {}
+                        sim_config = {}
+                        
+                        # Case 1: New format with metadata and simulation_config
+                        if "metadata" in pickle_data and "simulation_config" in pickle_data:
+                            metadata = pickle_data.get("metadata", {})
+                            sim_config = pickle_data.get("simulation_config", {})
+                            if DEBUG_LOGGING:
+                                print(f"   Using new format with metadata and simulation_config")
+                        # Case 2: Transitional format where pickle_data is itself the simulation object
+                        elif "config" in pickle_data and hasattr(pickle_data["config"], "to_dict"):
+                            if DEBUG_LOGGING:
+                                print(f"   Using transitional format with pickle_data.config")
+                            # We found a legacy format with the whole simulation object
+                            return pickle_data  # Return the simulation object directly
+                        # Case 3: Old format pickle with the config directly in it
+                        else:
+                            if DEBUG_LOGGING:
+                                print(f"   Using old format with config directly in pickle_data")
+                            # Treat the pickle data as the config itself
+                            sim_config = pickle_data
+                            # Try to extract metadata-like fields if present
+                            if "simulation_index" in pickle_data:
+                                metadata["index"] = pickle_data["simulation_index"]
+                            if "has_run" in pickle_data:
+                                metadata["has_run"] = pickle_data["has_run"]
+                        
+                        if DEBUG_LOGGING:
+                            if metadata:
+                                print(f"   Metadata keys: {list(metadata.keys())}")
+                            if sim_config:
+                                print(f"   Simulation config keys: {list(sim_config.keys())}")
+                        
+                        # Extract essential parameters, handling different structures
+                        sim_index = metadata.get("index", pickle_data.get("simulation_index", 1))
+                        display_name = sim_config.get("display_name", pickle_data.get("display_name", "Reconstructed Simulation"))
+                        time_step = float(sim_config.get("time_step", pickle_data.get("time_step", 0.001)))
+                        total_time = float(sim_config.get("total_time", pickle_data.get("total_time", 100.0)))
+                        temperature = float(sim_config.get("temperature", pickle_data.get("temperature", 310.0)))
+                        has_run = metadata.get("has_run", pickle_data.get("has_run", False))
+                        
+                        if DEBUG_LOGGING:
+                            print(f"   Extracted basic parameters:")
+                            print(f"     - display_name: {display_name}")
+                            print(f"     - time_step: {time_step}")
+                            print(f"     - total_time: {total_time}")
+                            print(f"     - temperature: {temperature}")
+                            print(f"     - sim_index: {sim_index}")
+                            print(f"     - has_run: {has_run}")
+                        
+                        # Create the simulation with basic parameters
+                        from src.backend.simulation import Simulation
+                        sim = Simulation(
+                            display_name=display_name,
+                            time_step=time_step,
+                            total_time=total_time,
+                            temperature=temperature,
+                            simulations_path=self.suite_path
+                        )
+                        
+                        if DEBUG_LOGGING:
+                            print(f"B. Basic simulation object created")
+                            print(f"   Setting additional properties")
+                        
+                        # Set additional properties
+                        sim.simulation_index = sim_index
+                        sim.has_run = has_run
+                        
+                        # Since pickle_data now only contains basic config, 
+                        # we need to load the full config from config.json or raw_config.json
+                        try:
+                            if DEBUG_LOGGING:
+                                print(f"B. Looking for raw_config.json to complete simulation data")
+                            
+                            raw_config_path = os.path.join(sim_path, "raw_config.json")
+                            if os.path.exists(raw_config_path):
+                                if DEBUG_LOGGING:
+                                    print(f"   Found raw_config.json, loading...")
+                                
+                                with open(raw_config_path, 'r') as f:
+                                    raw_config = json.load(f)
+                                
+                                if DEBUG_LOGGING:
+                                    print(f"   Raw config keys: {list(raw_config.keys())}")
+                                    
+                                # Load species, channels, etc. from raw_config
+                                from src.backend.ion_species import IonSpecies
+                                from src.backend.ion_channels import IonChannel
+                                from src.backend.ion_and_channels_link import IonChannelsLink
+                                
+                                # Load species
+                                if "species" in raw_config:
+                                    if DEBUG_LOGGING:
+                                        print(f"   Processing species from raw_config...")
+                                    
+                                    species = {}
+                                    for name, species_data in raw_config.get("species", {}).items():
+                                        if isinstance(species_data, dict):
+                                            if DEBUG_LOGGING:
+                                                print(f"     Species {name}: {list(species_data.keys())}")
+                                            
+                                            species[name] = IonSpecies(
+                                                display_name=name,
+                                                init_vesicle_conc=species_data.get("init_vesicle_conc", 0.0),
+                                                exterior_conc=species_data.get("exterior_conc", 0.0),
+                                                elementary_charge=species_data.get("elementary_charge", 1)
+                                            )
+                                    sim.config.species = species
+                                    
+                                    if DEBUG_LOGGING:
+                                        print(f"   Added {len(species)} species to config")
+                                
+                                # Load channels
+                                if "channels" in raw_config:
+                                    if DEBUG_LOGGING:
+                                        print(f"   Processing channels from raw_config...")
+                                    
+                                    channels = {}
+                                    for name, channel_data in raw_config.get("channels", {}).items():
+                                        if isinstance(channel_data, dict):
+                                            if DEBUG_LOGGING:
+                                                print(f"     Channel {name}: {list(channel_data.keys())}")
+                                            
+                                            channel_params = {k: v for k, v in channel_data.items() 
+                                                          if k not in ["__class__", "__module__", "display_name"]}
+                                            channels[name] = IonChannel(display_name=name, **channel_params)
+                                    sim.config.channels = channels
+                                    
+                                    if DEBUG_LOGGING:
+                                        print(f"   Added {len(channels)} channels to config")
+                                
+                                # Load ion channel links
+                                if "ion_channel_links" in raw_config:
+                                    if DEBUG_LOGGING:
+                                        print(f"   Processing ion channel links from raw_config...")
+                                    
+                                    links_data = raw_config.get("ion_channel_links", {})
+                                    
+                                    if isinstance(links_data, dict) and "links" in links_data:
+                                        if DEBUG_LOGGING:
+                                            print(f"     Found links data: {list(links_data.keys())}")
+                                        
+                                        ion_channel_links = IonChannelsLink(use_defaults=False)
+                                        ion_channel_links.links = links_data["links"]
+                                    else:
+                                        if DEBUG_LOGGING:
+                                            print(f"     No valid links data, using defaults")
+                                        
+                                        ion_channel_links = IonChannelsLink(use_defaults=True)
+                                    
+                                    sim.config.ion_channel_links = ion_channel_links
+                                
+                                # Load vesicle and exterior parameters
+                                if "vesicle_params" in raw_config:
+                                    sim.config.vesicle_params = raw_config.get("vesicle_params")
+                                    if DEBUG_LOGGING:
+                                        print(f"   Added vesicle_params to config")
+                                
+                                if "exterior_params" in raw_config:
+                                    sim.config.exterior_params = raw_config.get("exterior_params")
+                                    if DEBUG_LOGGING:
+                                        print(f"   Added exterior_params to config")
+                        except Exception as e:
+                            if DEBUG_LOGGING:
+                                import traceback
+                                print(f"B. Error loading full configuration from raw_config.json: {str(e)}")
+                                print(f"   {traceback.format_exc()}")
+                        
+                        if DEBUG_LOGGING:
+                            print(f"B. Successfully reconstructed simulation from pickle data")
+                            print(f"   Simulation has config: {hasattr(sim, 'config')}")
+                            if hasattr(sim, 'config'):
+                                print(f"   Config has species: {hasattr(sim.config, 'species')}")
+                                print(f"   Config has channels: {hasattr(sim.config, 'channels')}")
+                        
+                        return sim
+                    
+                    # If pickle_data is the Simulation object itself (legacy case)
+                    elif hasattr(pickle_data, 'config'):
+                        if DEBUG_LOGGING:
+                            print(f"   Pickle data is a Simulation object, returning directly")
+                        return pickle_data
+                        
                 except Exception as e:
                     if DEBUG_LOGGING:
-                        print(f"Warning: Failed to set some configuration parameters from pickle: {str(e)}")
-                
-                if DEBUG_LOGGING:
-                    print(f"Successfully reconstructed simulation from pickle data")
-                
-                return sim
+                        import traceback
+                        print(f"B. Error reconstructing from pickle data: {str(e)}")
+                        print(f"   {traceback.format_exc()}")
                 
             # If neither worked, return None
+            if DEBUG_LOGGING:
+                print(f"\nC. No viable reconstruction method available, returning None")
             return None
             
         except Exception as e:
             if DEBUG_LOGGING:
-                print(f"Warning: Failed to reconstruct simulation: {str(e)}")
+                import traceback
+                print(f"\n!!! Exception in _reconstruct_simulation: {str(e)}")
+                print(f"!!! Traceback: {traceback.format_exc()}")
             return None
     
     def add_simulation(self, simulation: Simulation) -> bool:
@@ -449,68 +788,185 @@ class SimulationSuite:
         # If not found in memory, try to load from disk
         return self._load_simulation(simulation_hash)
     
-    def list_simulations(self) -> List[Dict[str, Any]]:
+    def list_simulations(self, skip_problematic=False) -> List[Dict[str, Any]]:
         """
         List all simulations in the suite.
+        
+        Args:
+            skip_problematic: If True, skip simulations that cannot be loaded properly
         
         Returns:
             A list of dictionaries with simulation metadata
         """
         result = []
+        problematic_sims = []
         
         # First, collect from our in-memory simulations
         for sim in self.simulations:
-            sim_hash = sim.config.to_sha256_str()
-            result.append({
-                "hash": sim_hash,
-                "display_name": sim.display_name,
-                "index": sim.simulation_index,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),  # Current time for in-memory sims
-                "has_run": sim.has_run
-            })
+            try:
+                sim_hash = sim.config.to_sha256_str()
+                result.append({
+                    "hash": sim_hash,
+                    "display_name": sim.display_name,
+                    "index": sim.simulation_index,
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),  # Current time for in-memory sims
+                    "has_run": sim.has_run
+                })
+            except Exception as e:
+                if DEBUG_LOGGING:
+                    print(f"Warning: Error getting data for in-memory simulation: {str(e)}")
+                if not skip_problematic:
+                    # If we encounter an error, mark this simulation as problematic
+                    hash_value = getattr(sim, 'sim_hash', "unknown")
+                    problematic_sims.append({
+                        "hash": hash_value,
+                        "display_name": f"Error: {str(e)}",
+                        "index": 0,
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "has_run": False,
+                        "is_problematic": True
+                    })
         
         # Then check the filesystem for any we don't have in memory
         # But use only config.json files (avoid loading pickle files which can be slow)
         try:
-            for item in os.listdir(self.suite_path):
-                item_path = os.path.join(self.suite_path, item)
-                config_path = os.path.join(item_path, "config.json")
+            if not os.path.exists(self.suite_path):
+                if DEBUG_LOGGING:
+                    print(f"Warning: Suite path does not exist: {self.suite_path}")
+                return result
                 
-                # Skip if not a directory or already in our result
-                if not os.path.isdir(item_path) or any(r["hash"] == item for r in result):
-                    continue
+            for item in os.listdir(self.suite_path):
+                try:
+                    item_path = os.path.join(self.suite_path, item)
+                    config_path = os.path.join(item_path, "config.json")
                     
-                # Try to load metadata from config.json only
-                if os.path.exists(config_path):
-                    try:
-                        with open(config_path, 'r') as f:
-                            config_data = json.load(f)
+                    # Skip if not a directory or already in our result
+                    if not os.path.isdir(item_path) or any(r["hash"] == item for r in result):
+                        continue
+                    
+                    # Skip hidden directories and special system directories
+                    if item.startswith('.') or item == '__pycache__':
+                        continue
                         
-                        metadata = config_data.get("metadata", {})
-                        simulation = config_data.get("simulation", {})
+                    # Try to load metadata from config.json only
+                    sim_data = None
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config_data = json.load(f)
+                            
+                            metadata = config_data.get("metadata", {})
+                            simulation = config_data.get("simulation", {})
+                            
+                            # Get simulation data from config.json only
+                            sim_index = metadata.get("index", 1)  # Default to 1 if not found
+                            display_name = simulation.get("display_name", f"Sim #{sim_index}")
+                            has_run = metadata.get("has_run", False)
+                            timestamp = metadata.get("timestamp", "")
+                            
+                            # Add to our result list
+                            sim_data = {
+                                "hash": item,
+                                "display_name": display_name,
+                                "index": sim_index,
+                                "timestamp": timestamp,
+                                "has_run": has_run
+                            }
+                        except Exception as e:
+                            if DEBUG_LOGGING:
+                                print(f"Warning: Failed to read config for simulation {item}: {str(e)}")
+                            if not skip_problematic:
+                                problematic_sims.append({
+                                    "hash": item,
+                                    "display_name": f"Error reading config: {str(e)}",
+                                    "index": 0,
+                                    "timestamp": "",
+                                    "has_run": False,
+                                    "is_problematic": True
+                                })
+                    
+                    # If we didn't get data from config.json, try raw_config.json
+                    if sim_data is None:
+                        raw_config_path = os.path.join(item_path, "raw_config.json")
+                        if os.path.exists(raw_config_path):
+                            try:
+                                with open(raw_config_path, 'r') as f:
+                                    raw_config = json.load(f)
+                                
+                                display_name = raw_config.get("display_name", f"Sim #{raw_config.get('simulation_index', 0)}")
+                                sim_index = raw_config.get("simulation_index", 0)
+                                
+                                sim_data = {
+                                    "hash": item,
+                                    "display_name": display_name,
+                                    "index": sim_index,
+                                    "timestamp": "",
+                                    "has_run": False
+                                }
+                            except Exception as e:
+                                if DEBUG_LOGGING:
+                                    print(f"Warning: Failed to read raw_config for simulation {item}: {str(e)}")
+                                if not skip_problematic and item not in [p["hash"] for p in problematic_sims]:
+                                    problematic_sims.append({
+                                        "hash": item,
+                                        "display_name": f"Error reading raw config: {str(e)}",
+                                        "index": 0,
+                                        "timestamp": "",
+                                        "has_run": False,
+                                        "is_problematic": True
+                                    })
+                    
+                    # If we still have no data, but there's a simulation.pickle, add a basic entry
+                    if sim_data is None:
+                        pickle_path = os.path.join(item_path, "simulation.pickle")
+                        if os.path.exists(pickle_path):
+                            try:
+                                sim_data = {
+                                    "hash": item,
+                                    "display_name": f"Sim (pickle only) #{len(result) + 1}",
+                                    "index": len(result) + 1,
+                                    "timestamp": "",
+                                    "has_run": False
+                                }
+                            except Exception as e:
+                                if DEBUG_LOGGING:
+                                    print(f"Warning: Error with pickle file {pickle_path}: {str(e)}")
+                                if not skip_problematic and item not in [p["hash"] for p in problematic_sims]:
+                                    problematic_sims.append({
+                                        "hash": item,
+                                        "display_name": f"Error reading pickle: {str(e)}",
+                                        "index": 0,
+                                        "timestamp": "",
+                                        "has_run": False,
+                                        "is_problematic": True
+                                    })
+                    
+                    # Add to result if we have data
+                    if sim_data is not None:
+                        result.append(sim_data)
                         
-                        # Get simulation data from config.json only
-                        sim_index = metadata.get("index", 1)  # Default to 1 if not found
-                        display_name = simulation.get("display_name", f"Sim #{sim_index}")
-                        has_run = metadata.get("has_run", False)
-                        timestamp = metadata.get("timestamp", "")
-                        
-                        # Add to our result list
-                        result.append({
+                except Exception as e:
+                    if DEBUG_LOGGING:
+                        print(f"Warning: Error processing directory {item}: {str(e)}")
+                    if not skip_problematic:
+                        problematic_sims.append({
                             "hash": item,
-                            "display_name": display_name,
-                            "index": sim_index,
-                            "timestamp": timestamp,
-                            "has_run": has_run
+                            "display_name": f"Error: {str(e)}",
+                            "index": 0,
+                            "timestamp": "",
+                            "has_run": False,
+                            "is_problematic": True
                         })
-                        
-                    except Exception as e:
-                        if DEBUG_LOGGING:
-                            print(f"Warning: Failed to read config for simulation {item}: {str(e)}")
                             
         except Exception as e:
             if DEBUG_LOGGING:
                 print(f"Warning: Error listing simulations from filesystem: {str(e)}")
+        
+        # Add problematic simulations to the result if not skipping them
+        if not skip_problematic:
+            for prob_sim in problematic_sims:
+                if prob_sim["hash"] not in [r["hash"] for r in result]:
+                    result.append(prob_sim)
         
         # Sort the result by simulation index
         result.sort(key=lambda x: x.get("index", 0))

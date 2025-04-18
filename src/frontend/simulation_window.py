@@ -1,12 +1,16 @@
 import os
-from typing import Optional, Dict, Any, List
+import sys
+import json
+import time
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
 
-from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QMessageBox, QTabWidget,
-    QInputDialog, QTextEdit, QDialog, QDialogButtonBox, QLineEdit
+    QMainWindow, QTabWidget, QPushButton, QVBoxLayout, QHBoxLayout, 
+    QWidget, QMessageBox, QInputDialog, QFileDialog, QDialog, 
+    QTextEdit, QLabel, QProgressDialog, QApplication, QLineEdit
 )
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
 from ..backend.simulation import Simulation
@@ -14,16 +18,18 @@ from ..backend.simulation_suite import SimulationSuite
 from ..backend.ion_species import IonSpecies
 from ..backend.ion_channels import IonChannel
 from ..backend.ion_and_channels_link import IonChannelsLink
-from .. import app_settings
+from ..app_settings import DEBUG_LOGGING
 
+# Add tabs
 from .vesicle_tab import VesicleTab
 from .ion_species_tab import IonSpeciesTab
 from .channels_tab import ChannelsTab
 from .simulation_tab import SimulationParamsTab
+from .results_tab import ResultsTab
 
 def debug_print(*args, **kwargs):
     """Wrapper for print that only prints if DEBUG_LOGGING is True"""
-    if app_settings.DEBUG_LOGGING:
+    if DEBUG_LOGGING:
         print(*args, **kwargs)
 
 class SimulationWindow(QMainWindow):
@@ -147,74 +153,224 @@ class SimulationWindow(QMainWindow):
         self.channels_tab.update_ion_species_list(list(ion_species_data.keys()))
     
     def populate_from_simulation(self):
-        """Populate the tabs with data from an existing simulation"""
-        if not self.simulation:
-            return
+        """Populate all tabs with data from the loaded simulation"""
+        debug_print(f"Populating UI from simulation...")
         
         try:
+            # Handle different simulation data structures
+            if not hasattr(self.simulation, 'config'):
+                if DEBUG_LOGGING:
+                    print(f"Warning: Simulation doesn't have a config attribute. Attempting to handle alternative structures.")
+                
+                # Case 1: If simulation is a dictionary containing configuration data
+                if isinstance(self.simulation, dict):
+                    from src.backend.simulation import Simulation
+                    
+                    # Create a temporary simulation object with the config data
+                    temp_sim = Simulation()
+                    
+                    # Try to extract and set configuration from different possible structures
+                    if "config" in self.simulation:
+                        # Direct config reference
+                        temp_sim.config = self.simulation["config"]
+                    elif "simulation_config" in self.simulation:
+                        # Extract from simulation_config and set basic properties
+                        sim_config = self.simulation["simulation_config"]
+                        for key, value in sim_config.items():
+                            if hasattr(temp_sim.config, key):
+                                setattr(temp_sim.config, key, value)
+                    else:
+                        # Treat the whole dict as config values
+                        for key, value in self.simulation.items():
+                            if hasattr(temp_sim.config, key):
+                                setattr(temp_sim.config, key, value)
+                    
+                    # Use the temporary simulation for populating the UI
+                    self.simulation = temp_sim
+                    debug_print(f"Created temporary simulation object from dictionary data")
+                else:
+                    # If not a dict and no config attribute, we can't proceed
+                    raise ValueError(f"Cannot populate UI: simulation object has no 'config' attribute and is not a dictionary. Type: {type(self.simulation)}")
+            
             # Populate vesicle tab
-            vesicle_data = {
-                "vesicle_params": self.simulation.config.vesicle_params,
-                "exterior_params": self.simulation.config.exterior_params
-            }
-            self.vesicle_tab.set_data(vesicle_data)
+            vesicle_params = getattr(self.simulation.config, 'vesicle_params', {}) or {}
+            exterior_params = getattr(self.simulation.config, 'exterior_params', {}) or {}
+            
+            if not vesicle_params:
+                debug_print("Warning: No vesicle parameters found in simulation")
+            if not exterior_params:
+                debug_print("Warning: No exterior parameters found in simulation")
+                
+            self.vesicle_tab.set_data({
+                "vesicle_params": vesicle_params,
+                "exterior_params": exterior_params
+            })
             
             # Populate ion species tab
             ion_species_data = {}
-            for name, species in self.simulation.config.species.items():
-                ion_species_data[name] = {
-                    "init_vesicle_conc": species.config.init_vesicle_conc,
-                    "exterior_conc": species.config.exterior_conc,
-                    "elementary_charge": species.config.elementary_charge
-                }
-            self.ion_species_tab.set_data(ion_species_data)
             
-            # Update channel ion species list before setting channel data
-            self.update_channel_ion_species()
+            # Check if species is a dict containing IonSpecies objects
+            if hasattr(self.simulation.config, 'species') and self.simulation.config.species:
+                species_dict = self.simulation.config.species
+                if isinstance(species_dict, dict):
+                    for name, species in species_dict.items():
+                        # Handle cases where species might be a dict instead of IonSpecies
+                        if hasattr(species, 'config'):
+                            # It's an IonSpecies object with config
+                            ion_species_data[name] = {
+                                "display_name": name,
+                                "init_vesicle_conc": species.config.init_vesicle_conc,
+                                "exterior_conc": species.config.exterior_conc,
+                                "elementary_charge": species.config.elementary_charge
+                            }
+                        elif isinstance(species, dict):
+                            # It's a dictionary with species data
+                            ion_species_data[name] = {
+                                "display_name": name,
+                                "init_vesicle_conc": species.get("init_vesicle_conc", 0),
+                                "exterior_conc": species.get("exterior_conc", 0),
+                                "elementary_charge": species.get("elementary_charge", 1)
+                            }
+                        else:
+                            # Try to extract attributes directly
+                            try:
+                                ion_species_data[name] = {
+                                    "display_name": name,
+                                    "init_vesicle_conc": getattr(species, "init_vesicle_conc", 0),
+                                    "exterior_conc": getattr(species, "exterior_conc", 0),
+                                    "elementary_charge": getattr(species, "elementary_charge", 1)
+                                }
+                            except Exception as e:
+                                debug_print(f"Error extracting species data for {name}: {str(e)}")
+            
+            self.ion_species_tab.set_data(ion_species_data)
             
             # Populate channels tab
             channel_data = {}
-            for name, channel in self.simulation.config.channels.items():
-                channel_data[name] = {
-                    "display_name": name,
-                    **channel.config.to_dict()
-                }
+            
+            # Check if channels is a dict containing IonChannel objects
+            if hasattr(self.simulation.config, 'channels') and self.simulation.config.channels:
+                for name, channel in self.simulation.config.channels.items():
+                    # Handle cases where channel might be a dict instead of IonChannel
+                    if hasattr(channel, 'config'):
+                        # It's an IonChannel object with config
+                        channel_data[name] = {
+                            "display_name": name,
+                            **channel.config.to_dict()
+                        }
+                    elif isinstance(channel, dict):
+                        # It's a dictionary with channel data
+                        channel_data[name] = {
+                            "display_name": name,
+                            **channel
+                        }
+                    else:
+                        # Try to extract attributes directly
+                        try:
+                            # Get all public attributes that aren't callables
+                            attrs = {k: v for k, v in channel.__dict__.items() 
+                                     if not k.startswith('_') and not callable(v)}
+                            channel_data[name] = {
+                                "display_name": name,
+                                **attrs
+                            }
+                        except Exception as e:
+                            debug_print(f"Error extracting channel data for {name}: {str(e)}")
             
             # Extract ion channel links from the IonChannelsLink object
             ion_channel_links_data = {}
-            # Get the links dictionary from the IonChannelsLink object
-            links_dict = self.simulation.config.ion_channel_links.get_links()
             
-            # Process each primary ion and its associated channels
-            for primary_ion, channel_links in links_dict.items():
-                for channel_name, secondary_ion in channel_links:
-                    if channel_name not in ion_channel_links_data:
-                        ion_channel_links_data[channel_name] = {
-                            "primary_ion": primary_ion,
-                            "secondary_ions": []
-                        }
-                    
-                    # Add secondary ion if it exists
-                    if secondary_ion:
-                        ion_channel_links_data[channel_name]["secondary_ions"].append(secondary_ion)
+            # Check if ion_channel_links exists and has the links attribute
+            if hasattr(self.simulation.config, 'ion_channel_links'):
+                # Get the links dictionary from the IonChannelsLink object
+                links_dict = {}
+                
+                if hasattr(self.simulation.config.ion_channel_links, 'get_links'):
+                    links_dict = self.simulation.config.ion_channel_links.get_links()
+                elif hasattr(self.simulation.config.ion_channel_links, 'links'):
+                    links_dict = self.simulation.config.ion_channel_links.links
+                elif isinstance(self.simulation.config.ion_channel_links, dict) and "links" in self.simulation.config.ion_channel_links:
+                    links_dict = self.simulation.config.ion_channel_links["links"]
+                else:
+                    links_dict = {}
+                
+                # Process each primary ion and its associated channels
+                for primary_ion, channel_links in links_dict.items():
+                    for channel_name, secondary_ion in channel_links:
+                        if channel_name not in ion_channel_links_data:
+                            ion_channel_links_data[channel_name] = {
+                                "primary_ion": primary_ion,
+                                "secondary_ions": []
+                            }
+                        
+                        # Add secondary ion if it exists
+                        if secondary_ion:
+                            ion_channel_links_data[channel_name]["secondary_ions"].append(secondary_ion)
             
             self.channels_tab.set_data(channel_data, ion_channel_links_data)
             
             # Populate simulation parameters tab
+            # Get values with safe default fallbacks
+            try:
+                time_step = getattr(self.simulation.config, 'time_step', 0.001)
+            except:
+                time_step = 0.001
+                
+            try:
+                total_time = getattr(self.simulation.config, 'total_time', 100.0)
+            except:
+                total_time = 100.0
+                
+            try:
+                # Try different ways to get the display name
+                if hasattr(self.simulation.config, "display_name"):
+                    display_name = self.simulation.config.display_name
+                elif hasattr(self.simulation, "display_name"):
+                    display_name = self.simulation.display_name
+                else:
+                    display_name = "Unknown Simulation"
+            except:
+                display_name = "Unknown Simulation"
+                
             sim_params = {
-                "time_step": self.simulation.config.time_step,
-                "total_time": self.simulation.config.total_time,
-                "display_name": self.simulation.config.display_name if hasattr(self.simulation.config, "display_name") else (self.simulation.display_name if hasattr(self.simulation, "display_name") else "")
+                "time_step": time_step,
+                "total_time": total_time,
+                "display_name": display_name
             }
             self.simulation_tab.set_data(sim_params)
             
+            debug_print(f"Successfully populated UI from simulation: {display_name}")
+            
         except Exception as e:
             import traceback
+            error_trace = traceback.format_exc()
+            debug_print(f"Error in populate_from_simulation: {str(e)}")
+            debug_print(error_trace)
             QMessageBox.warning(
                 self,
                 "Error Loading Simulation",
-                f"Could not fully load simulation data: {str(e)}\n\n{traceback.format_exc()}"
+                f"Could not fully load simulation data: {str(e)}\n\n"
+                f"Would you like to see detailed error information?",
+                QMessageBox.Yes | QMessageBox.No
             )
+            
+            if QMessageBox.Yes:
+                error_dialog = QDialog(self)
+                error_dialog.setWindowTitle("Detailed Error Information")
+                error_dialog.setMinimumSize(800, 400)
+                
+                layout = QVBoxLayout(error_dialog)
+                
+                error_text = QTextEdit()
+                error_text.setReadOnly(True)
+                error_text.setPlainText(f"Error: {str(e)}\n\nTraceback:\n{error_trace}")
+                layout.addWidget(error_text)
+                
+                close_button = QPushButton("Close")
+                close_button.clicked.connect(error_dialog.close)
+                layout.addWidget(close_button)
+                
+                error_dialog.exec_()
     
     def get_simulation_data(self) -> Optional[Dict[str, Any]]:
         """
@@ -488,7 +644,7 @@ class SimulationWindow(QMainWindow):
                 f"An unexpected error occurred: {str(e)}\n\n"
                 f"Please check the logs for more details."
             )
-            if app_settings.DEBUG_LOGGING:
+            if DEBUG_LOGGING:
                 import traceback
                 debug_print(f"Error in save_simulation: {str(e)}")
                 debug_print(traceback.format_exc())
@@ -590,11 +746,11 @@ class SimulationWindow(QMainWindow):
                 if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                     # For numeric values, check if they're close enough (with a reasonable tolerance)
                     if abs(original_value - current_value) > 1e-6:
-                        if app_settings.DEBUG_LOGGING:
+                        if DEBUG_LOGGING:
                             print(f"Parameter {param} changed: {original_value} -> {current_value}")
                         return True
                 elif str(original_value).strip() != str(current_value).strip():
-                    if app_settings.DEBUG_LOGGING:
+                    if DEBUG_LOGGING:
                         print(f"Parameter {param} changed: '{original_value}' -> '{current_value}'")
                     return True
             
@@ -605,7 +761,7 @@ class SimulationWindow(QMainWindow):
                         current_value = current_data['vesicle_params'][key]
                         if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                             if abs(original_value - current_value) > 1e-6:
-                                if app_settings.DEBUG_LOGGING:
+                                if DEBUG_LOGGING:
                                     print(f"Vesicle param {key} changed: {original_value} -> {current_value}")
                                 return True
             
@@ -615,7 +771,7 @@ class SimulationWindow(QMainWindow):
                         current_value = current_data['exterior_params'][key]
                         if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                             if abs(original_value - current_value) > 1e-6:
-                                if app_settings.DEBUG_LOGGING:
+                                if DEBUG_LOGGING:
                                     print(f"Exterior param {key} changed: {original_value} -> {current_value}")
                                 return True
             
@@ -625,14 +781,14 @@ class SimulationWindow(QMainWindow):
                 
                 # Check if species count changed
                 if len(self.simulation.species) != len(current_species):
-                    if app_settings.DEBUG_LOGGING:
+                    if DEBUG_LOGGING:
                         print(f"Species count changed: {len(self.simulation.species)} -> {len(current_species)}")
                     return True
                 
                 # Check individual species parameters
                 for name, original_species in self.simulation.species.items():
                     if name not in current_species:
-                        if app_settings.DEBUG_LOGGING:
+                        if DEBUG_LOGGING:
                             print(f"Species '{name}' removed")
                         return True
                     
@@ -647,7 +803,7 @@ class SimulationWindow(QMainWindow):
                         if original_value is not None and current_value is not None:
                             if isinstance(original_value, (int, float)) and isinstance(current_value, (int, float)):
                                 if abs(original_value - current_value) > 1e-6:
-                                    if app_settings.DEBUG_LOGGING:
+                                    if DEBUG_LOGGING:
                                         print(f"Species '{name}' param {param} changed: {original_value} -> {current_value}")
                                     return True
             
@@ -657,14 +813,14 @@ class SimulationWindow(QMainWindow):
                 
                 # Check if channel count changed
                 if len(self.simulation.channels) != len(current_channels):
-                    if app_settings.DEBUG_LOGGING:
+                    if DEBUG_LOGGING:
                         print(f"Channel count changed: {len(self.simulation.channels)} -> {len(current_channels)}")
                     return True
                 
                 # Check individual channel parameters
                 for name, original_channel in self.simulation.channels.items():
                     if name not in current_channels:
-                        if app_settings.DEBUG_LOGGING:
+                        if DEBUG_LOGGING:
                             print(f"Channel '{name}' removed")
                         return True
                     
@@ -673,7 +829,7 @@ class SimulationWindow(QMainWindow):
                     current_channel = current_channels[name]
                     if hasattr(original_channel, 'channel_type') and hasattr(current_channel, 'channel_type'):
                         if original_channel.channel_type != current_channel.channel_type:
-                            if app_settings.DEBUG_LOGGING:
+                            if DEBUG_LOGGING:
                                 print(f"Channel '{name}' type changed: {original_channel.channel_type} -> {current_channel.channel_type}")
                             return True
             
@@ -687,31 +843,31 @@ class SimulationWindow(QMainWindow):
                     
                     # Simple check: different number of primary ions
                     if len(original_links) != len(current_links):
-                        if app_settings.DEBUG_LOGGING:
+                        if DEBUG_LOGGING:
                             print(f"Ion channel links count changed: {len(original_links)} -> {len(current_links)}")
                         return True
                     
                     # Check links for each primary ion
                     for primary_ion, original_ion_links in original_links.items():
                         if primary_ion not in current_links:
-                            if app_settings.DEBUG_LOGGING:
+                            if DEBUG_LOGGING:
                                 print(f"Primary ion '{primary_ion}' links removed")
                             return True
                         
                         current_ion_links = current_links[primary_ion]
                         if len(original_ion_links) != len(current_ion_links):
-                            if app_settings.DEBUG_LOGGING:
+                            if DEBUG_LOGGING:
                                 print(f"Links count for '{primary_ion}' changed: {len(original_ion_links)} -> {len(current_ion_links)}")
                             return True
             
             # If we get here, no significant changes detected
-            if app_settings.DEBUG_LOGGING:
+            if DEBUG_LOGGING:
                 debug_print("No changes detected in simulation parameters")
             return False
             
         except Exception as e:
             # If there's an error in comparison, log it but err on the side of caution
-            if app_settings.DEBUG_LOGGING:
+            if DEBUG_LOGGING:
                 debug_print(f"Error checking for unsaved changes: {str(e)}")
                 import traceback
                 debug_print(traceback.format_exc())
