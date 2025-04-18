@@ -26,14 +26,24 @@ Simulation::Simulation(
 ) : timeStep_(timeStep),
     totalTime_(totalTime),
     time_(0.0),
-    temperature_(2578.5871 / IDEAL_GAS_CONSTANT),
-    initBufferCapacity_(5e-4),
-    bufferCapacity_(initBufferCapacity_),
-    displayName_(displayName),
-    unaccountedIonAmount_(0.0) {
+    temperature_(310.0), // Temperature in K (body temp)
+    initBufferCapacity_(0.0005),
+    bufferCapacity_(0.0005),
+    displayName_(displayName.empty() ? "simulation" : displayName),
+    unaccountedIonAmount_(0.0),
+    ionAmountsUpdated_(false),
+    vesicle_(nullptr),
+    exterior_(nullptr),
+    histories_(std::make_shared<HistoriesStorage>()) {
     
     // Initialize storage for histories
     histories_ = std::make_shared<HistoriesStorage>();
+    
+    // Initialize the vesicle with default parameters
+    vesicle_ = std::make_shared<Vesicle>();
+    
+    // Initialize the exterior with default parameters
+    exterior_ = std::make_shared<Exterior>();
 }
 
 void Simulation::loadFromJson(const std::string& jsonConfig) {
@@ -256,8 +266,18 @@ void Simulation::loadFromJson(const std::string& jsonConfig) {
         // Record the initial state in histories
         histories_->updateHistories();
         
+        // After registering objects, add detailed connection information
+        std::cout << "\n=== DETAILED ION-CHANNEL CONNECTION STATUS ===" << std::endl;
+        for (const auto& [speciesName, species] : species_) {
+            std::cout << "Species: " << speciesName << " has " << species->getChannelCount() << " channels connected:" << std::endl;
+            species->printConnectedChannels();
+        }
+        
         // Add after loadFromJson method
         printDetailedDiagnostics();
+        
+        // Verify all channel connections
+        verifyChannelConnections();
         
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Error loading simulation configuration: ") + e.what());
@@ -265,54 +285,41 @@ void Simulation::loadFromJson(const std::string& jsonConfig) {
 }
 
 void Simulation::runOneIteration() {
-    // In Python's single iteration mode, it calculates fluxes but doesn't actually 
-    // change the membrane voltage for the first step
-    
-    // Ensure unaccounted ion amount is calculated properly
-    if (time_ == 0.0 && unaccountedIonAmount_ == 0.0) {
-        unaccountedIonAmount_ = getUnaccountedIonAmount();
-    }
+    // First update the simulation state
+    updateSimulationState();
     
     // Get the current flux calculation parameters
     FluxCalculationParameters params = getFluxCalculationParameters();
     
+    // Compute channel fluxes first (required for species total flux calculation)
+    std::cout << "  Computing channel fluxes:" << std::endl;
+    for (const auto& [channelName, channel] : channels_) {
+        double flux = channel->computeFlux(params);
+        std::cout << "    " << channelName << ": " << flux << " mol/s" << std::endl;
+    }
+    
     // Compute the fluxes for each ion species
+    std::cout << "  Computing ion species fluxes:" << std::endl;
     std::vector<double> fluxes;
     for (const auto& [speciesName, species] : species_) {
-        fluxes.push_back(species->computeTotalFlux(params));
+        double flux = species->computeTotalFlux(params);
+        fluxes.push_back(flux);
+        std::cout << "    " << speciesName << ": " << flux << " mol/s" << std::endl;
     }
+    
+    // Update histories BEFORE updating ion amounts - to match Python implementation exactly
+    histories_->updateHistories();
+    
+    // Reset ion amounts updated flag before updating
+    ionAmountsUpdated_ = false;
     
     // Update the ion amounts based on the computed fluxes
     updateIonAmounts(fluxes);
     
-    // In Python's implementation, for a simulation of a single time step,
-    // it doesn't recalculate voltage after the ion amounts are updated
-    
-    // Record for time = 0
-    if (time_ == 0.0) {
-        // Update physical properties but preserve the initial electrical properties
-        double savedCharge = vesicle_->getCharge();
-        double savedVoltage = vesicle_->getVoltage();
-        double savedPH = vesicle_->getPH();
-        
-        // Update physical properties 
-        updateVolume();
-        updateVesicleConcentrations();
-        updateBuffer();
-        updateArea();
-        updateCapacitance();
-        
-        // Restore initial electrical values - this matches Python for the first step
-        vesicle_->setCharge(savedCharge);
-        vesicle_->setVoltage(savedVoltage);
-        vesicle_->updatePH(savedPH);
-    } else {
-        // For subsequent iterations, perform full update
-        updateSimulationState();
-    }
-    
-    // Update histories
-    histories_->updateHistories();
+    // CRITICAL FIX: Update simulation state AGAIN after ion amounts are updated
+    // This ensures all derived values (voltage, pH, etc.) are recalculated
+    // based on the new ion amounts, matching the Python implementation
+    updateSimulationState();
     
     // Update simulation time
     time_ += timeStep_;
@@ -348,57 +355,13 @@ void Simulation::run(std::function<void(int)> progressCallback) {
     // Reset histories for time
     histories_->addHistory("simulation_time", time_);
     
-    // Main simulation loop
+    // Main simulation loop - MATCH PYTHON IMPLEMENTATION
     for (int iter = 0; iter < iterNum; iter++) {
         // Print iteration info
         std::cout << "\n=== ITERATION " << iter << " (Time: " << time_ << "s) ===" << std::endl;
         
-        // Update simulation state
-        updateSimulationState();
-        
-        // Calculate flux parameters
-        FluxCalculationParameters params = getFluxCalculationParameters();
-        
-        // Calculate fluxes
-        std::vector<double> fluxes;
-        for (const auto& [speciesName, species] : species_) {
-            double flux = species->computeTotalFlux(params);
-            fluxes.push_back(flux);
-        }
-        
-        // Record state in histories
-        histories_->addHistory("simulation_time", time_);
-        histories_->updateHistories();
-        
-        // Update ion amounts based on fluxes
-        updateIonAmounts(fluxes);
-        
-        // For a simulation with a single time step, preserve the initial electrical values
-        // This matches the Python implementation
-        if (iterNum == 1 && iter == 0) {
-            // Save the initial electrical values
-            double savedCharge = vesicle_->getCharge();
-            double savedVoltage = vesicle_->getVoltage();
-            double savedPH = vesicle_->getPH();
-            
-            // Update physical properties only
-            updateVolume();
-            updateVesicleConcentrations();
-            updateBuffer();
-            updateArea();
-            updateCapacitance();
-            
-            // Restore initial electrical values
-            vesicle_->setCharge(savedCharge);
-            vesicle_->setVoltage(savedVoltage);
-            vesicle_->updatePH(savedPH);
-        } else {
-            // For multi-step simulations, perform full update
-            updateSimulationState();
-        }
-        
-        // Increment time
-        time_ += timeStep_;
+        // Use runOneIteration which has been fixed to match Python implementation
+        runOneIteration();
         
         // Report progress
         if (progressCallback && iterNum > 0) {
@@ -407,18 +370,9 @@ void Simulation::run(std::function<void(int)> progressCallback) {
         }
     }
     
-    // One final update of simulation state
+    // Make sure final state is recorded
     updateSimulationState();
     histories_->updateHistories();
-    
-    // Special case for single-iteration runs: At the end, restore initial electrical values
-    // to match the Python implementation
-    if (iterNum == 1) {
-        // This ensures that for a single-iteration run, we get the exact same values as Python
-        vesicle_->setCharge(vesicle_->getInitCharge());
-        vesicle_->setVoltage(vesicle_->getInitVoltage());
-        vesicle_->updatePH(vesicle_->getInitPH());
-    }
     
     // Add final time point to histories
     histories_->addHistory("simulation_time", time_);
@@ -442,21 +396,10 @@ void Simulation::printFinalValues() {
     std::cout << "vesicle_init_volume: " << vesicle_->getInitVolume() << " L" << std::endl;
     std::cout << "vesicle_volume: " << vesicle_->getVolume() << " L" << std::endl;
     std::cout << "vesicle_init_charge: " << vesicle_->getInitCharge() << " C" << std::endl;
-    
-    // For a single-iteration run, we should report exactly the same charge, voltage, and pH
-    // as the initial values, to match Python's behavior
-    bool isSingleIteration = static_cast<int>(totalTime_ / timeStep_) <= 1;
-    if (isSingleIteration) {
-        std::cout << "vesicle_charge: " << vesicle_->getInitCharge() << " C" << std::endl;
-        std::cout << "vesicle_capacitance: " << vesicle_->getCapacitance() << " F" << std::endl;
-        std::cout << "vesicle_voltage: " << vesicle_->getInitVoltage() << " V" << std::endl;
-        std::cout << "vesicle_pH: " << vesicle_->getInitPH() << std::endl;
-    } else {
-        std::cout << "vesicle_charge: " << vesicle_->getCharge() << " C" << std::endl;
-        std::cout << "vesicle_capacitance: " << vesicle_->getCapacitance() << " F" << std::endl;
-        std::cout << "vesicle_voltage: " << vesicle_->getVoltage() << " V" << std::endl;
-        std::cout << "vesicle_pH: " << vesicle_->getPH() << std::endl;
-    }
+    std::cout << "vesicle_charge: " << vesicle_->getCharge() << " C" << std::endl;
+    std::cout << "vesicle_capacitance: " << vesicle_->getCapacitance() << " F" << std::endl;
+    std::cout << "vesicle_voltage: " << vesicle_->getVoltage() << " V" << std::endl;
+    std::cout << "vesicle_pH: " << vesicle_->getPH() << " F" << std::endl;
     
     // Ion concentrations and amounts
     std::cout << "== Ion Values ==" << std::endl;
@@ -485,17 +428,27 @@ FluxCalculationParameters Simulation::getFluxCalculationParameters() {
     // Calculate the Nernst constant
     params.nernstConstant = IDEAL_GAS_CONSTANT * temperature_ / FARADAY_CONSTANT;
     
-    // Calculate free hydrogen concentrations
-    // Free H+ concentration = total H+ concentration * fraction of free H+
-    // fraction of free H+ = 1 / (1 + buffer capacity / (10^-pH))
-    double vesicleHPlusTotalConc = std::pow(10, -vesicle_->getPH());
-    double exteriorHPlusTotalConc = std::pow(10, -exterior_->getPH());
+    // FIXED: Calculate free hydrogen concentrations to exactly match Python implementation
+    // Python: flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * self.buffer_capacity
     
-    double vesicleHPlusFreeConc = vesicleHPlusTotalConc / (1.0 + bufferCapacity_ / vesicleHPlusTotalConc);
-    double exteriorHPlusFreeConc = exteriorHPlusTotalConc; // Assuming no buffer in exterior
-    
-    params.vesicleHydrogenFree = vesicleHPlusFreeConc;
-    params.exteriorHydrogenFree = exteriorHPlusFreeConc;
+    // Find hydrogen species
+    auto hydrogen = species_.find("h");
+    if (hydrogen != species_.end()) {
+        // Get hydrogen concentration directly from the species
+        double hConc = hydrogen->second->getVesicleConc();
+        double exteriorHConc = hydrogen->second->getExteriorConc();
+        
+        // Simply multiply by buffer capacity to match Python exactly
+        params.vesicleHydrogenFree = hConc * bufferCapacity_;
+        params.exteriorHydrogenFree = exteriorHConc * initBufferCapacity_; 
+    } else {
+        // Use pH-based calculation as fallback if no hydrogen species found
+        double vesicleHPlusTotalConc = std::pow(10, -vesicle_->getPH());
+        double exteriorHPlusTotalConc = std::pow(10, -exterior_->getPH());
+        
+        params.vesicleHydrogenFree = vesicleHPlusTotalConc * bufferCapacity_;
+        params.exteriorHydrogenFree = exteriorHPlusTotalConc * initBufferCapacity_;
+    }
     
     return params;
 }
@@ -542,6 +495,9 @@ void Simulation::updateIonAmounts(const std::vector<double>& fluxes) {
         std::cout << "    " << name << ": " << oldAmount << " + (" << flux << " * " << timeStep_ 
                   << ") = " << newAmount << " mol" << std::endl;
     }
+    
+    // Set the flag to indicate ion amounts have been updated
+    ionAmountsUpdated_ = true;
 }
 
 void Simulation::updateVesicleConcentrations() {
@@ -678,13 +634,16 @@ void Simulation::updateCharge() {
     std::cout << "  updateCharge calculation:" << std::endl;
     std::cout << "    Initial charge: " << vesicle_->getCharge() << " C" << std::endl;
     
-    // For the first step, use the initial charge value (just like Python does)
-    if (time_ == 0.0) {
-        std::cout << "    Using initial charge (t=0): " << vesicle_->getInitCharge() << " C" << std::endl;
+    // For the first step and ONLY if ion amounts haven't been updated, use the initial charge value
+    if (time_ == 0.0 && !ionAmountsUpdated_) {
+        std::cout << "    Using initial charge (t=0, pre-flux): " << vesicle_->getInitCharge() << " C" << std::endl;
         vesicle_->setCharge(vesicle_->getInitCharge());
         std::cout << "    Final charge: " << vesicle_->getCharge() << " C" << std::endl;
         return;
     }
+    
+    // In all other cases (t>0 or ion amounts updated), calculate charge from ion amounts
+    std::cout << "    Calculating charge from ion amounts..." << std::endl;
     
     // Calculate total ionic charge inside the vesicle (moles)
     double totalIonicCharge = 0.0;
@@ -699,12 +658,9 @@ void Simulation::updateCharge() {
     
     std::cout << "    Total ionic charge: " << totalIonicCharge << " mol" << std::endl;
     
-    // Add unaccounted ion amount to the total charge - CRITICAL for matching Python
+    // Add unaccounted ion amount to the total charge
     std::cout << "    Unaccounted ion amount: " << unaccountedIonAmount_ << " mol" << std::endl;
     
-    // Python implementation:
-    // self.vesicle.charge = ((sum(ion.elementary_charge * ion.vesicle_amount for ion in self.all_species) +
-    //                        self.unaccounted_ion_amounts) * FARADAY_CONSTANT)
     totalIonicCharge += unaccountedIonAmount_;
     std::cout << "    Total charge with unaccounted: " << totalIonicCharge << " mol" << std::endl;
     
@@ -730,21 +686,13 @@ void Simulation::updateCapacitance() {
 void Simulation::updateVoltage() {
     std::cout << "  updateVoltage calculation:" << std::endl;
     std::cout << "    Initial voltage: " << vesicle_->getVoltage() << " V" << std::endl;
-    std::cout << "    Time: " << time_ << " s" << std::endl;
     
-    // For the first step of the simulation, always use the initial voltage
-    // This is consistent with the Python implementation
-    if (time_ == 0.0) {
-        std::cout << "    Using initial voltage (t=0): " << vesicle_->getInitVoltage() << " V" << std::endl;
-        vesicle_->setVoltage(vesicle_->getInitVoltage());
-    } else {
-        // Update voltage based on charge and capacitance
-        double charge = vesicle_->getCharge();
-        double capacitance = vesicle_->getCapacitance();
-        double newVoltage = charge / capacitance;
-        std::cout << "    New voltage = " << charge << " / " << capacitance << " = " << newVoltage << " V" << std::endl;
-        vesicle_->setVoltage(newVoltage);  // Use setVoltage directly with the calculated value
-    }
+    // Always update voltage based on charge and capacitance
+    double charge = vesicle_->getCharge();
+    double capacitance = vesicle_->getCapacitance();
+    double newVoltage = charge / capacitance;
+    std::cout << "    New voltage = " << charge << " / " << capacitance << " = " << newVoltage << " V" << std::endl;
+    vesicle_->setVoltage(newVoltage);
     
     std::cout << "    Final voltage: " << vesicle_->getVoltage() << " V" << std::endl;
 }
@@ -765,14 +713,6 @@ void Simulation::updateBuffer() {
 void Simulation::updatePH() {
     std::cout << "  updatePH calculation:" << std::endl;
     std::cout << "    Initial pH: " << vesicle_->getPH() << std::endl;
-    
-    // For the first time step, use the initial pH value
-    if (time_ == 0.0) {
-        std::cout << "    Using initial pH (t=0): " << vesicle_->getInitPH() << std::endl;
-        vesicle_->updatePH(vesicle_->getInitPH());
-        std::cout << "    Final pH: " << vesicle_->getPH() << std::endl;
-        return;
-    }
     
     // Find hydrogen ion species
     auto hydrogen = species_.find("h");
@@ -896,4 +836,38 @@ void Simulation::printDetailedDiagnostics() {
     std::cout << std::setprecision(17) << "capacitance: " << vesicle_->getCapacitance() << " F" << std::endl;
     std::cout << std::setprecision(17) << "init_voltage: " << vesicle_->getInitVoltage() << " V" << std::endl;
     std::cout << std::setprecision(17) << "voltage: " << vesicle_->getVoltage() << " V" << std::endl;
+}
+
+// Add a new method to verify channel connections after initialization
+void Simulation::verifyChannelConnections() {
+    std::cout << "\n=== VERIFYING CHANNEL CONNECTIONS ===" << std::endl;
+    
+    for (const auto& [channelName, channel] : channels_) {
+        std::cout << "Checking channel: " << channelName << std::endl;
+        
+        // Try to compute a simple flux to verify the channel is connected correctly
+        try {
+            FluxCalculationParameters testParams;
+            testParams.voltage = vesicle_->getVoltage();
+            testParams.pH = vesicle_->getPH();
+            testParams.time = 0.0;
+            testParams.area = vesicle_->getArea();
+            testParams.nernstConstant = IDEAL_GAS_CONSTANT * temperature_ / FARADAY_CONSTANT;
+            
+            // Calculate free hydrogen concentrations
+            double vesicleHPlusTotalConc = std::pow(10, -vesicle_->getPH());
+            double exteriorHPlusTotalConc = std::pow(10, -exterior_->getPH());
+            testParams.vesicleHydrogenFree = vesicleHPlusTotalConc * bufferCapacity_;
+            testParams.exteriorHydrogenFree = exteriorHPlusTotalConc;
+            
+            double testFlux = channel->computeFlux(testParams);
+            std::cout << "  ✓ " << channelName << " correctly connected (Test flux: " << testFlux << " mol/s)" << std::endl;
+        } 
+        catch (const std::exception& e) {
+            std::cerr << "  ❌ ERROR: " << channelName << " - " << e.what() << std::endl;
+            throw std::runtime_error("Channel connection verification failed for: " + channelName);
+        }
+    }
+    
+    std::cout << "All channel connections verified successfully." << std::endl;
 } 

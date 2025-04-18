@@ -34,6 +34,10 @@ public:
     double getVesicleAmount() const { return vesicleAmount_; }
     double getInitVesicleConc() const { return initVesicleConc_; }
     
+    // New methods for debugging channel connections
+    size_t getChannelCount() const { return channels_.size(); }
+    void printConnectedChannels() const;
+    
     // Setters
     void setVesicleConc(double value);
     void setVesicleAmount(double value);

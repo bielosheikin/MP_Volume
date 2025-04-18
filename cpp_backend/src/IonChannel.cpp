@@ -124,49 +124,76 @@ double IonChannel::computeLogTerm(const FluxCalculationParameters& params) {
         throw std::runtime_error("Cannot compute log term: primary species not connected");
     }
     
+    // Additional validation to ensure the primary species matches the allowed primary ion
+    if (primarySpecies_->getDisplayName() != allowedPrimaryIon_) {
+        throw std::runtime_error("Primary species mismatch: channel expects '" + 
+                                allowedPrimaryIon_ + "' but connected to '" + 
+                                primarySpecies_->getDisplayName() + "'");
+    }
+    
+    // If this is a two-ion channel, verify the secondary species is connected and matches
+    if (!allowedSecondaryIon_.empty() && !secondarySpecies_) {
+        throw std::runtime_error("Secondary species not connected for two-ion channel");
+    }
+    
+    if (secondarySpecies_ && secondarySpecies_->getDisplayName() != allowedSecondaryIon_) {
+        throw std::runtime_error("Secondary species mismatch: channel expects '" + 
+                               allowedSecondaryIon_ + "' but connected to '" + 
+                               secondarySpecies_->getDisplayName() + "'");
+    }
+    
     // Get concentrations from species
     double vesicleConc = primarySpecies_->getVesicleConc();
     double exteriorConc = primarySpecies_->getExteriorConc();
     
-    // Handle hydrogen ion special case
+    // Handle hydrogen ion special case - FIXED to exactly match Python implementation
     if (useFreeHydrogen_ && primarySpecies_->getDisplayName() == "h") {
         vesicleConc = params.vesicleHydrogenFree;
         exteriorConc = params.exteriorHydrogenFree;
     }
     
-    // Handle two-ion channels (like NHE where flux depends on both Na+ and H+)
+    // Handle two-ion channels (like NHE or CLC where flux depends on both ions)
     if (secondarySpecies_) {
         double secondaryVesicleConc = secondarySpecies_->getVesicleConc();
         double secondaryExteriorConc = secondarySpecies_->getExteriorConc();
         
-        // Handle hydrogen ion special case for secondary species
+        // Handle hydrogen ion special case for secondary species - FIXED to exactly match Python implementation
         if (useFreeHydrogen_ && secondarySpecies_->getDisplayName() == "h") {
             secondaryVesicleConc = params.vesicleHydrogenFree;
             secondaryExteriorConc = params.exteriorHydrogenFree;
         }
         
-        // FIXED: Match Python implementation order of operations
-        // Python uses exterior/vesicle for primary and vesicle/exterior for secondary
+        // CRITICAL FIX: Exactly match Python implementation for log term calculation
+        // Python: log_term = exterior_primary / vesicle_primary * (vesicle_secondary / exterior_secondary)
+        
+        // Step 1: Calculate exterior/vesicle ratio for primary ion raised to power
         double primaryTerm = std::pow(exteriorConc / vesicleConc, primaryExponent_);
+        
+        // Step 2: Calculate vesicle/exterior ratio for secondary ion raised to power
         double secondaryTerm = std::pow(secondaryVesicleConc / secondaryExteriorConc, secondaryExponent_);
         
-        double logTerm = primaryTerm * secondaryTerm;
+        // Step 3: Calculate product
+        double ratio = primaryTerm * secondaryTerm;
         
-        if (logTerm <= 0) {
+        // Handle edge cases and safety checks
+        if (ratio <= 0) {
             return 0.0; // Avoid log of zero or negative
         }
         
-        return std::log(logTerm);
+        // Return natural log of the ratio
+        return std::log(ratio);
     } 
     else {
         // Single ion channel
-        // FIXED: Match Python implementation for single ion channels
+        // Safety check for divide by zero
         if (exteriorConc <= 0 || vesicleConc <= 0) {
             return 0.0; // Avoid log of zero or negative
         }
         
-        // Use exterior/vesicle to match Python
-        return std::log(std::pow(exteriorConc / vesicleConc, primaryExponent_));
+        // Use exterior/vesicle ratio to match Python implementation
+        double ratio = std::pow(exteriorConc / vesicleConc, primaryExponent_);
+        
+        return std::log(ratio);
     }
 }
 

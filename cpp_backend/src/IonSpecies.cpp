@@ -54,6 +54,8 @@ double IonSpecies::computeTotalFlux(const FluxCalculationParameters& params) {
     
     // Compute flux across all connected channels
     for (const auto& channel : channels_) {
+        // Do not silently catch errors - if a channel is not properly connected,
+        // this should cause an exception that identifies the issue
         double flux = channel->computeFlux(params);
         totalFlux += flux;
     }
@@ -106,5 +108,25 @@ void IonSpecies::setVesicleConc(double value) {
         vesicleConc_ = 1e-9;  // Minimum threshold for concentration
     } else {
         vesicleConc_ = value; 
+    }
+}
+
+void IonSpecies::printConnectedChannels() const {
+    if (channels_.empty()) {
+        std::cout << "  No channels connected to this species." << std::endl;
+        return;
+    }
+    
+    for (const auto& channel : channels_) {
+        std::cout << "  - " << channel->getDisplayName();
+        
+        // Print primary and secondary species info if available
+        std::cout << " (allowed primary: " << channel->getAllowedPrimaryIon();
+        
+        if (!channel->getAllowedSecondaryIon().empty()) {
+            std::cout << ", allowed secondary: " << channel->getAllowedSecondaryIon();
+        }
+        
+        std::cout << ")" << std::endl;
     }
 } 

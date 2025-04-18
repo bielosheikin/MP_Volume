@@ -29,10 +29,11 @@ public:
     // Diagnostic methods
     void printDetailedDiagnostics();
     void printFinalValues();
+    void verifyChannelConnections();
     
     // Main simulation methods
-    void runOneIteration();
-    void run(std::function<void(int)> progressCallback = nullptr);
+    virtual void runOneIteration();
+    virtual void run(std::function<void(int)> progressCallback = nullptr);
     
     // Initialization methods
     void setIonAmounts();
@@ -60,7 +61,7 @@ public:
     const std::string& getDisplayName() const { return displayName_; }
     nlohmann::json getHistoriesJson() const;
     
-private:
+protected:
     // Configuration properties
     double timeStep_;
     double totalTime_;
@@ -72,6 +73,7 @@ private:
     
     // Simulation state
     double unaccountedIonAmount_; // Store unaccounted ion amount like Python
+    bool ionAmountsUpdated_; // Track if ion amounts have been updated
     
     // Physical objects
     std::shared_ptr<Vesicle> vesicle_;
