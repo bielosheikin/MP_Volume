@@ -120,78 +120,33 @@ class SimulationSuite:
         """
         sim_path = os.path.join(self.suite_path, simulation_hash)
         pickle_path = os.path.join(sim_path, "simulation.pickle")
-        
-        if not os.path.exists(pickle_path):
-            if DEBUG_LOGGING:
-                print(f"Warning: No simulation pickle found at {pickle_path}")
-            return None
+        config_path = os.path.join(sim_path, "config.json")
         
         try:
-            # Try to load the simulation from pickle
-            with open(pickle_path, 'rb') as f:
-                pickle_data = pickle.load(f)
+            # First try to get config from config.json (most reliable source)
+            if os.path.exists(config_path):
+                if DEBUG_LOGGING:
+                    print(f"Loading simulation from config.json: {config_path}")
+                return self._reconstruct_simulation(simulation_hash, sim_path)
             
-            # If the loaded object is a Simulation instance, return it
-            if isinstance(pickle_data, Simulation):
-                simulation = pickle_data
+            # If config.json doesn't exist, try to load from pickle
+            elif os.path.exists(pickle_path):
+                # Try to load the simulation from pickle
+                with open(pickle_path, 'rb') as f:
+                    pickle_data = pickle.load(f)
                 
-                # Update the path in case it has changed
-                simulation.simulations_path = self.suite_path
-                
-                # If simulation index is 0, try to get a proper index
-                if getattr(simulation, 'simulation_index', 0) == 0:
-                    # First check suite config for this simulation's index
-                    suite_config_path = os.path.join(self.suite_path, "config.json")
-                    if os.path.exists(suite_config_path):
-                        try:
-                            with open(suite_config_path, 'r') as f:
-                                suite_config = json.load(f)
-                                for sim_data in suite_config.get("simulations", []):
-                                    if sim_data.get("hash") == simulation_hash and sim_data.get("index", 0) > 0:
-                                        simulation.simulation_index = sim_data["index"]
-                                        if DEBUG_LOGGING:
-                                            print(f"Updated index from suite config: {simulation.simulation_index}")
-                                        break
-                        except:
-                            # If reading suite config fails, try individual config
-                            pass
-                    
-                    # Then try the simulation's own config.json
-                    if getattr(simulation, 'simulation_index', 0) == 0:
-                        config_path = os.path.join(sim_path, "config.json")
-                        if os.path.exists(config_path):
-                            try:
-                                with open(config_path, 'r') as f:
-                                    config_data = json.load(f)
-                                    metadata = config_data.get("metadata", {})
-                                    index = metadata.get("index")
-                                    if index and index > 0:
-                                        simulation.simulation_index = index
-                                        if DEBUG_LOGGING:
-                                            print(f"Updated index from simulation config: {simulation.simulation_index}")
-                            except:
-                                # If reading config fails, just continue
-                                pass
-                    
-                    # If still 0, use update_simulation_index() to get a proper index
-                    if getattr(simulation, 'simulation_index', 0) == 0:
-                        simulation.update_simulation_index()
-                        if DEBUG_LOGGING:
-                            print(f"Generated new index: {simulation.simulation_index}")
-                
-                return simulation
-            
-            # If it's a dictionary, try to reconstruct the simulation
-            elif isinstance(pickle_data, dict):
+                if DEBUG_LOGGING:
+                    print(f"Reconstructing simulation from pickle data")
                 return self._reconstruct_simulation(simulation_hash, sim_path, pickle_data)
+            
             else:
                 if DEBUG_LOGGING:
-                    print(f"Warning: Pickle file contains unsupported data type: {type(pickle_data)}")
+                    print(f"Warning: No simulation data found for {simulation_hash}")
                 return None
             
         except Exception as e:
             if DEBUG_LOGGING:
-                print(f"Warning: Failed to load simulation from {pickle_path}: {str(e)}")
+                print(f"Warning: Failed to load simulation from {sim_path}: {str(e)}")
             return None
     
     def _reconstruct_simulation(self, simulation_hash, sim_path, pickle_data=None):
@@ -208,7 +163,7 @@ class SimulationSuite:
             A reconstructed Simulation object or None if reconstruction failed
         """
         try:
-            # First try to get config from config.json
+            # First try to get config from config.json (most reliable source)
             config_path = os.path.join(sim_path, "config.json")
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
@@ -239,11 +194,20 @@ class SimulationSuite:
                 sim.simulation_index = sim_index
                 sim.has_run = has_run
                 
+                # Try to set other configuration parameters from sim_config
+                try:
+                    for key, value in sim_config.items():
+                        if hasattr(sim.config, key) and key not in ['display_name', 'time_step', 'total_time', 'temperature']:
+                            setattr(sim.config, key, value)
+                except Exception as e:
+                    if DEBUG_LOGGING:
+                        print(f"Warning: Failed to set some configuration parameters: {str(e)}")
+                
                 if DEBUG_LOGGING:
                     print(f"Successfully reconstructed simulation from config.json")
                 
                 return sim
-                
+            
             # If config.json doesn't exist or fails, try using pickle_data
             elif pickle_data and isinstance(pickle_data, dict):
                 metadata = pickle_data.get("metadata", {})
@@ -269,6 +233,15 @@ class SimulationSuite:
                 # Set additional properties
                 sim.simulation_index = sim_index
                 sim.has_run = has_run
+                
+                # Try to set other configuration parameters from sim_config
+                try:
+                    for key, value in sim_config.items():
+                        if hasattr(sim.config, key) and key not in ['display_name', 'time_step', 'total_time', 'temperature']:
+                            setattr(sim.config, key, value)
+                except Exception as e:
+                    if DEBUG_LOGGING:
+                        print(f"Warning: Failed to set some configuration parameters from pickle: {str(e)}")
                 
                 if DEBUG_LOGGING:
                     print(f"Successfully reconstructed simulation from pickle data")
@@ -376,36 +349,28 @@ class SimulationSuite:
             if DEBUG_LOGGING:
                 print(f"Warning: Failed to create config files: {str(e)}")
                 
-        # 2. Save simulation.pickle
+        # 2. Save simulation.pickle with configuration data
         try:
+            # Create minimal data with essential configuration
+            config_data = {
+                "metadata": metadata,
+                "simulation_config": simulation.config.to_dict()
+            }
+            
+            # Add non-config parameters that should be tracked
+            config_data["simulation_config"]["simulation_index"] = simulation.simulation_index
+            config_data["simulation_config"]["display_name"] = simulation.display_name
+            config_data["simulation_config"]["has_run"] = simulation.has_run
+            
             with open(os.path.join(simulation_dir, "simulation.pickle"), 'wb') as f:
-                pickle.dump(simulation, f, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(config_data, f, protocol=pickle.HIGHEST_PROTOCOL)
                 
             if DEBUG_LOGGING:
-                print(f"Created simulation.pickle in {simulation_dir}")
+                print(f"Created configuration data in simulation.pickle in {simulation_dir}")
         except Exception as e:
             if DEBUG_LOGGING:
                 print(f"Warning: Failed to create simulation.pickle: {str(e)}")
                 
-            # If full serialization fails, create a minimal pickle with essential data
-            try:
-                minimal_data = {
-                    "metadata": metadata,
-                    "simulation_config": simulation.config.to_dict(),
-                    "simulation_index": simulation.simulation_index,
-                    "display_name": simulation.display_name,
-                    "has_run": simulation.has_run
-                }
-                
-                with open(os.path.join(simulation_dir, "simulation.pickle"), 'wb') as f:
-                    pickle.dump(minimal_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                    
-                if DEBUG_LOGGING:
-                    print(f"Created minimal simulation.pickle in {simulation_dir}")
-            except Exception as e:
-                if DEBUG_LOGGING:
-                    print(f"Warning: Failed to create minimal simulation.pickle: {str(e)}")
-                    
         # 3. Create a minimal history metadata file
         try:
             history_metadata = {

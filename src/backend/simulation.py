@@ -389,7 +389,7 @@ class Simulation(Configurable, Trackable):
         
         Saves:
         - config.json: The simulation configuration in JSON format
-        - simulation.pickle: The simulation object in pickle format
+        - simulation.pickle: Only the configuration data in pickle format
         - histories/*.npy: Each history value as a separate numpy file in the 'histories' subdirectory
         
         Returns:
@@ -466,7 +466,7 @@ class Simulation(Configurable, Trackable):
             if DEBUG_LOGGING:
                 print(f"Warning: Failed to save configuration as JSON: {str(e)}")
         
-        # Extract the essential data to save (including all primitive types)
+        # Create configuration data for pickle file
         config_data = {
             "metadata": metadata,
             "simulation_config": {}
@@ -490,27 +490,16 @@ class Simulation(Configurable, Trackable):
         # Add non-config parameters that should be tracked
         config_data["simulation_config"]["simulation_index"] = self.simulation_index
         
-        # Try first to pickle the entire simulation object
+        # Save the configuration data to pickle file
         try:
             pickle_path = os.path.join(simulation_dir, "simulation.pickle")
             with open(pickle_path, 'wb') as f:
-                pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(config_data, f, protocol=pickle.HIGHEST_PROTOCOL)
             if DEBUG_LOGGING:
-                print(f"Full simulation object saved to pickle: {pickle_path}")
+                print(f"Configuration data saved to pickle: {pickle_path}")
         except Exception as e:
             if DEBUG_LOGGING:
-                print(f"Warning: Failed to pickle full simulation object: {str(e)}")
-            
-            # Fallback: save just the key config data
-            try:
-                config_pickle_path = os.path.join(simulation_dir, "config.pickle")
-                with open(config_pickle_path, 'wb') as f:
-                    pickle.dump(config_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                if DEBUG_LOGGING:
-                    print(f"Configuration data saved to pickle: {config_pickle_path}")
-            except Exception as e:
-                if DEBUG_LOGGING:
-                    print(f"Warning: Failed to save configuration as pickle: {str(e)}")
+                print(f"Warning: Failed to save configuration as pickle: {str(e)}")
         
         # Save each history value as a separate numpy file
         histories = self.histories.get_histories()
