@@ -11,6 +11,9 @@ class Vesicle(Configurable, Trackable):
     specific_capacitance: float = 1e-2
     init_voltage: float = 4e-2
     init_radius: float = 1.3e-6
+    # Note: init_pH is still included for backward compatibility,
+    # but in practice, pH is calculated from hydrogen ion concentration
+    # and buffer capacity (which is set in the Simulation class)
     init_pH: float = 7.4
 
     # Non-config fields

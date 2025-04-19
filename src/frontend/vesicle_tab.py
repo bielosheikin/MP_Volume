@@ -1,4 +1,10 @@
-from PyQt5.QtWidgets import QWidget, QFormLayout, QDoubleSpinBox, QMessageBox
+from PyQt5.QtWidgets import (
+    QWidget, QFormLayout, QDoubleSpinBox, QMessageBox, 
+    QLabel, QLineEdit
+)
+from PyQt5.QtCore import Qt
+import math
+from ..backend.default_ion_species import default_ion_species
 
 class VesicleTab(QWidget):
     def __init__(self):
@@ -17,11 +23,18 @@ class VesicleTab(QWidget):
         self.init_voltage.setValue(0.04)
         layout.addRow("Initial Voltage (V):", self.init_voltage)
 
-        self.init_pH = QDoubleSpinBox()
-        self.init_pH.setDecimals(2)
-        self.init_pH.setRange(0, 14)
-        self.init_pH.setValue(7.4)
-        layout.addRow("Initial pH:", self.init_pH)
+        self.buffer_capacity = QDoubleSpinBox()
+        self.buffer_capacity.setDecimals(7)
+        self.buffer_capacity.setRange(0.00001, 0.1)
+        self.buffer_capacity.setValue(0.0005)
+        self.buffer_capacity.setSingleStep(0.0001)
+        self.buffer_capacity.valueChanged.connect(self.update_calculated_pH)
+        layout.addRow("Initial Buffer Capacity:", self.buffer_capacity)
+
+        self.calculated_pH = QLineEdit()
+        self.calculated_pH.setReadOnly(True)
+        self.calculated_pH.setStyleSheet("background-color: #f0f0f0;")
+        layout.addRow("Initial Vesicle pH (calculated):", self.calculated_pH)
 
         self.default_pH = QDoubleSpinBox()
         self.default_pH.setDecimals(2)
@@ -30,19 +43,51 @@ class VesicleTab(QWidget):
         layout.addRow("Exterior Default pH:", self.default_pH)
 
         self.setLayout(layout)
-
+        
+        self.h_concentration = None
+        self.try_get_default_h_concentration()
+        self.update_calculated_pH()
+    
+    def try_get_default_h_concentration(self):
+        try:
+            if 'h' in default_ion_species:
+                self.h_concentration = default_ion_species['h'].init_vesicle_conc
+                return True
+        except Exception:
+            pass
+        return False
+        
+    def update_calculated_pH(self):
+        buffer_capacity = self.buffer_capacity.value()
+        
+        if self.h_concentration is None or self.h_concentration <= 0:
+            self.calculated_pH.setText("Hydrogen concentration not available")
+            self.calculated_pH.setStyleSheet("background-color: #fff0f0; color: #aa0000;")
+            return
+            
+        try:
+            free_h_conc = self.h_concentration * buffer_capacity
+            
+            calculated_pH = -math.log10(free_h_conc)
+            
+            self.calculated_pH.setText(f"{calculated_pH:.4f}")
+            self.calculated_pH.setStyleSheet("background-color: #f0f0f0; color: #000000;")
+        except Exception as e:
+            self.calculated_pH.setText(f"Error: {str(e)}")
+            self.calculated_pH.setStyleSheet("background-color: #fff0f0; color: #aa0000;")
+    
     def get_data(self):
         init_radius = self.init_radius.value()
         init_voltage = self.init_voltage.value()
-        init_pH = self.init_pH.value()
+        buffer_capacity = self.buffer_capacity.value()
         default_pH = self.default_pH.value()
         
         if init_radius <= 0:
             QMessageBox.warning(self, "Invalid Parameter", "Initial radius must be positive.")
             return None
             
-        if init_pH <= 0:
-            QMessageBox.warning(self, "Invalid Parameter", "Initial pH must be positive.")
+        if buffer_capacity <= 0:
+            QMessageBox.warning(self, "Invalid Parameter", "Initial buffer capacity must be positive.")
             return None
             
         if default_pH <= 0:
@@ -53,33 +98,27 @@ class VesicleTab(QWidget):
             "vesicle_params": {
                 "init_radius": init_radius,
                 "init_voltage": init_voltage,
-                "init_pH": init_pH,
             },
             "exterior_params": {
                 "pH": default_pH,
-            }
+            },
+            "init_buffer_capacity": buffer_capacity
         }
 
     def set_data(self, data):
-        """
-        Set the input fields with the given data.
-        
-        Args:
-            data: Dictionary containing vesicle_params and exterior_params
-        """
         vesicle_params = data.get("vesicle_params", {})
         exterior_params = data.get("exterior_params", {})
         
-        # Set vesicle parameters
         if "init_radius" in vesicle_params:
             self.init_radius.setValue(vesicle_params["init_radius"])
         
         if "init_voltage" in vesicle_params:
             self.init_voltage.setValue(vesicle_params["init_voltage"])
         
-        if "init_pH" in vesicle_params:
-            self.init_pH.setValue(vesicle_params["init_pH"])
+        if "init_buffer_capacity" in data:
+            self.buffer_capacity.setValue(data["init_buffer_capacity"])
         
-        # Set exterior parameters
         if "pH" in exterior_params:
             self.default_pH.setValue(exterior_params["pH"])
+            
+        self.update_calculated_pH()

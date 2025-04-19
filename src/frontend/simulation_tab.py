@@ -5,10 +5,7 @@ class SimulationParamsTab(QWidget):
         super().__init__()
         layout = QFormLayout()
 
-        # Add simulation name field
-        self.display_name = QLineEdit()
-        self.display_name.setPlaceholderText("Enter simulation name")
-        layout.addRow("Simulation Name:", self.display_name)
+        # Remove the simulation name field - it's now managed in the simulation window header
 
         self.time_step = QDoubleSpinBox()
         self.time_step.setDecimals(3)
@@ -34,27 +31,17 @@ class SimulationParamsTab(QWidget):
             Dictionary containing simulation parameters
             - time_step: time step for the simulation
             - total_time: total simulation time
-            - display_name: optional display name
         """
         if "time_step" in data:
             self.time_step.setValue(data["time_step"])
         
         if "total_time" in data:
             self.total_time.setValue(data["total_time"])
-            
-        if "display_name" in data:
-            self.display_name.setText(data["display_name"])
 
     def get_data(self):
         # Validate parameters before returning
         time_step = self.time_step.value()
         total_time = self.total_time.value()
-        display_name = self.display_name.text().strip()
-        
-        if not display_name:
-            QMessageBox.warning(self, "Missing Information", 
-                               "Please enter a name for the simulation.")
-            return None
         
         if time_step <= 0:
             QMessageBox.warning(self, "Invalid Parameter", 
@@ -75,6 +62,5 @@ class SimulationParamsTab(QWidget):
         # These parameters are now direct configuration fields in the Simulation class
         return {
             "time_step": time_step,
-            "total_time": total_time,
-            "display_name": display_name
+            "total_time": total_time
         }
