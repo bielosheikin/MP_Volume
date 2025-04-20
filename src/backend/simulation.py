@@ -36,13 +36,16 @@ class Simulation(Configurable, Trackable):
     # Non-config fields
     TRACKABLE_FIELDS = ('buffer_capacity', 'time')
 
-    def __init__(self, simulations_path=None, **kwargs):
+    def __init__(self, simulations_path=None, stored_hash=None, **kwargs):
         # Initialize both parent classes with their required parameters
         super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
         
         # Store the simulations path and index (not part of config)
         self.simulations_path = simulations_path
         self.simulation_index = 1  # Initialize to 1 instead of 0
+        
+        # Store the original hash if provided - this prevents hash recalculation issues when loading
+        self.stored_hash = stored_hash
         
         # Track whether this simulation has been run
         self.has_run = False
@@ -432,8 +435,8 @@ class Simulation(Configurable, Trackable):
         # Create the simulations root directory if it doesn't exist
         os.makedirs(self.simulations_path, exist_ok=True)
         
-        # Generate a hash from the simulation configuration
-        config_hash = self.config.to_sha256_str()
+        # Get the simulation hash, using stored_hash if available
+        config_hash = self.get_hash()
         
         # Create a directory for this specific simulation using the hash as the name
         simulation_dir = os.path.join(self.simulations_path, config_hash)
@@ -569,3 +572,13 @@ class Simulation(Configurable, Trackable):
                 print(f"New simulation saved to: {simulation_dir} (Index: {self.simulation_index}, {histories_saved} histories saved)")
         
         return simulation_dir
+
+    def get_hash(self):
+        """Get the simulation hash, using the stored hash if available to avoid recalculation issues."""
+        if hasattr(self, 'stored_hash') and self.stored_hash:
+            calculated_hash = self.config.to_sha256_str()
+            if DEBUG_LOGGING and calculated_hash != self.stored_hash:
+                print(f"HASH MISMATCH: Stored hash ({self.stored_hash}) differs from calculated hash ({calculated_hash})")
+                print(f"Using stored hash to maintain consistency")
+            return self.stored_hash
+        return self.config.to_sha256_str()

@@ -102,7 +102,7 @@ class SimulationSuite:
             if local_debug:
                 # Print current simulation indices
                 for sim in self.simulations:
-                    print(f"Simulation {sim.display_name}: index={sim.simulation_index}, hash={sim.config.to_sha256_str()}")
+                    print(f"Simulation {sim.display_name}: index={sim.simulation_index}, hash={sim.get_hash()}")
             
         except Exception as e:
             if local_debug or DEBUG_LOGGING:
@@ -134,6 +134,7 @@ class SimulationSuite:
                 if DEBUG_LOGGING:
                     print(f"\n1. Attempting to load simulation from config.json: {config_path}")
                 
+                # Pass the simulation_hash to ensure the loaded simulation uses the correct hash
                 simulation = self._reconstruct_simulation(simulation_hash, sim_path)
                 
                 if DEBUG_LOGGING:
@@ -143,6 +144,7 @@ class SimulationSuite:
                         if hasattr(simulation, 'config'):
                             print(f"   Config has species: {hasattr(simulation.config, 'species')}")
                             print(f"   Config has channels: {hasattr(simulation.config, 'channels')}")
+                        print(f"   Simulation hash: {simulation.get_hash()}")
                 
                 if simulation:
                     if DEBUG_LOGGING:
@@ -249,6 +251,9 @@ class SimulationSuite:
                     temperature = float(sim_config.get("temperature", 310.0))
                     has_run = metadata.get("has_run", False)
                     
+                    # Store the original hash from metadata to avoid recalculation issues
+                    original_hash = metadata.get("hash", simulation_hash)
+                    
                     if DEBUG_LOGGING:
                         print(f"   Extracted basic parameters:")
                         print(f"     - display_name: {display_name}")
@@ -257,6 +262,7 @@ class SimulationSuite:
                         print(f"     - temperature: {temperature}")
                         print(f"     - sim_index: {sim_index}")
                         print(f"     - has_run: {has_run}")
+                        print(f"     - original_hash: {original_hash}")
                     
                     # Prepare the simulation parameters
                     sim_kwargs = {
@@ -264,7 +270,8 @@ class SimulationSuite:
                         "time_step": time_step,
                         "total_time": total_time,
                         "temperature": temperature,
-                        "simulations_path": self.suite_path
+                        "simulations_path": self.suite_path,
+                        "stored_hash": original_hash  # Pass the original hash to prevent recalculation issues
                     }
                     
                     if DEBUG_LOGGING:
@@ -609,7 +616,7 @@ class SimulationSuite:
             ValueError: If a simulation with the same hash already exists in the suite
         """
         # Generate the simulation hash
-        sim_hash = simulation.config.to_sha256_str()
+        sim_hash = simulation.get_hash()
         
         # Check if this simulation already exists in the suite
         sim_path = os.path.join(self.suite_path, sim_hash)
@@ -651,7 +658,7 @@ class SimulationSuite:
         Returns:
             The path where the simulation was saved
         """
-        sim_hash = simulation.config.to_sha256_str()
+        sim_hash = simulation.get_hash()
         simulation_dir = os.path.join(self.suite_path, sim_hash)
         
         # Create the directory structure directly
@@ -734,6 +741,9 @@ class SimulationSuite:
         # Ensure the simulation's path is properly set
         simulation.simulations_path = self.suite_path
         
+        # Store the hash to prevent recalculation issues
+        simulation.stored_hash = sim_hash
+        
         return simulation_dir
     
     def remove_simulation(self, simulation_hash: str) -> bool:
@@ -763,7 +773,7 @@ class SimulationSuite:
         
         # Remove from our internal list
         self.simulations = [sim for sim in self.simulations 
-                            if sim.config.to_sha256_str() != simulation_hash]
+                            if sim.get_hash() != simulation_hash]
         
         # Save updated suite configuration
         self._save_suite_config()
@@ -782,7 +792,7 @@ class SimulationSuite:
         """
         # First, check our in-memory list
         for sim in self.simulations:
-            if sim.config.to_sha256_str() == simulation_hash:
+            if sim.get_hash() == simulation_hash:
                 return sim
                 
         # If not found in memory, try to load from disk
@@ -804,7 +814,7 @@ class SimulationSuite:
         # First, collect from our in-memory simulations
         for sim in self.simulations:
             try:
-                sim_hash = sim.config.to_sha256_str()
+                sim_hash = sim.get_hash()
                 result.append({
                     "hash": sim_hash,
                     "display_name": sim.display_name,
@@ -984,7 +994,7 @@ class SimulationSuite:
             The path where the simulation was saved
         """
         # Check if the simulation is already in our list
-        sim_hash = simulation.config.to_sha256_str()
+        sim_hash = simulation.get_hash()
         
         # Ensure simulation has a valid index before saving
         if getattr(simulation, 'simulation_index', 0) == 0:
@@ -992,7 +1002,7 @@ class SimulationSuite:
             if DEBUG_LOGGING:
                 print(f"Updated simulation index to {simulation.simulation_index} before saving")
                 
-        if not any(sim.config.to_sha256_str() == sim_hash for sim in self.simulations):
+        if not any(sim.get_hash() == sim_hash for sim in self.simulations):
             # Add to our list first (which will force-save and call _save_suite_config)
             self.add_simulation(simulation)
             return os.path.join(self.suite_path, sim_hash)
@@ -1061,7 +1071,7 @@ class SimulationSuite:
                 if DEBUG_LOGGING:
                     print(f"Updated simulation index to {sim.simulation_index} when saving suite config")
             
-            sim_hash = sim.config.to_sha256_str()
+            sim_hash = sim.get_hash()
             sim_data = {
                 "hash": sim_hash,
                 "display_name": sim.display_name,
@@ -1318,7 +1328,7 @@ class SimulationSuite:
         
         # Check all in-memory simulations first
         for sim in self.simulations:
-            sim_hash = sim.config.to_sha256_str()
+            sim_hash = sim.get_hash()
             
             # Collect existing index, if it's valid
             if getattr(sim, 'simulation_index', 0) > 0:
@@ -1379,7 +1389,7 @@ class SimulationSuite:
         
         # Update in-memory simulations with their assigned indices
         for sim in self.simulations:
-            sim_hash = sim.config.to_sha256_str()
+            sim_hash = sim.get_hash()
             if sim_hash in simulation_indices:
                 # Always update with the assigned index
                 new_index = simulation_indices[sim_hash]
