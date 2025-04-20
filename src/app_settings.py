@@ -15,6 +15,10 @@ DEBUG_LOGGING = False
 # - When the user chooses to save in the confirmation dialog
 # This eliminates the need for a save frequency parameter
 
-# Maximum number of history points to store in memory
+# Maximum number of history points to store in memory for plotting
 # Lower values reduce memory usage but may affect graph resolution
-MAX_HISTORY_POINTS = 10000 
+MAX_HISTORY_PLOT_POINTS = 10000
+
+# Maximum number of points to save in histories
+# This parameter controls how many points are saved to the .npy files
+MAX_HISTORY_SAVE_POINTS = 1e6

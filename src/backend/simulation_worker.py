@@ -2,7 +2,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 import time
 
 from .simulation import Simulation
-from ..app_settings import DEBUG_LOGGING
+from ..app_settings import DEBUG_LOGGING, MAX_HISTORY_SAVE_POINTS
 
 class SimulationWorker(QObject):
     """
@@ -38,6 +38,10 @@ class SimulationWorker(QObject):
             
             # Initialize simulation
             total_iterations = self.simulation.iter_num
+            
+            # Reset current_iteration counter for consistent behavior
+            self.simulation.current_iteration = 0
+            
             self.simulation.set_ion_amounts()
             self.simulation.get_unaccounted_ion_amount()
             last_progress_update = time.time()
@@ -65,8 +69,24 @@ class SimulationWorker(QObject):
                 # Set progress to 100% to ensure UI shows completion
                 self.progressChanged.emit(100)
                 
+                # Make sure the final state is recorded
+                self.simulation.update_simulation_state()
+                
+                # Always save the final iteration point
+                self.simulation.histories.update_histories()
+                
+                # Ensure simulation_time includes the final time point
+                if (len(self.simulation.histories.histories['simulation_time']) == 0 or 
+                    self.simulation.histories.histories['simulation_time'][-1] != self.simulation.time):
+                    self.simulation.histories.histories['simulation_time'].append(self.simulation.time)
+                
                 # Mark simulation as run
                 self.simulation.has_run = True
+                
+                if DEBUG_LOGGING:
+                    saved_points = len(self.simulation.histories.histories['simulation_time'])
+                    print(f"Simulation complete, {saved_points} history points saved " +
+                          f"(max: {MAX_HISTORY_SAVE_POINTS}, interval: {self.simulation.save_interval})")
                 
                 # Final save will happen when suite_window.py calls save_simulation
                 # after receiving the finished signal

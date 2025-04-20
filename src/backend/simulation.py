@@ -18,7 +18,7 @@ import pickle
 import numpy as np
 import time
 from pathlib import Path
-from ..app_settings import DEBUG_LOGGING
+from ..app_settings import DEBUG_LOGGING, MAX_HISTORY_PLOT_POINTS, MAX_HISTORY_SAVE_POINTS
 
 class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
@@ -73,6 +73,22 @@ class Simulation(Configurable, Trackable):
         self.iter_num = int(self.total_time / self.time_step)
         self.time = 0.0
 
+        # Calculate saving frequency based on MAX_HISTORY_SAVE_POINTS
+        if self.iter_num <= MAX_HISTORY_SAVE_POINTS:
+            # If total iterations are less than MAX_HISTORY_SAVE_POINTS, save every iteration
+            self.save_interval = 1
+        else:
+            # Otherwise, save points evenly distributed throughout the simulation
+            self.save_interval = self.iter_num // MAX_HISTORY_SAVE_POINTS
+            if self.save_interval < 1:
+                self.save_interval = 1
+                
+        if DEBUG_LOGGING:
+            print(f"History save interval set to {self.save_interval} (iter_num: {self.iter_num}, max points: {MAX_HISTORY_SAVE_POINTS})")
+
+        # Store current iteration count for saving logic
+        self.current_iteration = 0
+
         # Set default values if not provided
         if self.channels is None:
             self.channels = default_channels
@@ -109,6 +125,10 @@ class Simulation(Configurable, Trackable):
         # Set the simulation index based on existing saved simulations
         if self.simulations_path:
             self.update_simulation_index()
+
+        # Ensure MAX_HISTORY_PLOT_POINTS is smaller or equal to MAX_HISTORY_SAVE_POINTS
+        if MAX_HISTORY_PLOT_POINTS > MAX_HISTORY_SAVE_POINTS:
+            raise ValueError("MAX_HISTORY_PLOT_POINTS must be smaller or equal to MAX_HISTORY_SAVE_POINTS.")
 
     def update_simulation_index(self):
         """Update the simulation index based on existing simulations, ensuring unique indices."""
@@ -340,14 +360,19 @@ class Simulation(Configurable, Trackable):
         flux_calculation_parameters = self.get_Flux_Calculation_Parameters()
         fluxes = [ion.compute_total_flux(flux_calculation_parameters=flux_calculation_parameters) for ion in self.all_species]
 
-        # Explicitly add simulation_time to histories
-        if 'simulation_time' not in self.histories.histories:
-            self.histories.histories['simulation_time'] = []
-        self.histories.histories['simulation_time'].append(self.time)
-        
-        self.histories.update_histories()
-        self.update_ion_amounts(fluxes)
+        self.current_iteration += 1
+        # Save histories at evenly spaced intervals based on save_interval
+        # Always save the first and last iteration
+        if (self.current_iteration % self.save_interval == 0) or (self.current_iteration == 1):
+            # Explicitly add simulation_time to histories
+            if 'simulation_time' not in self.histories.histories:
+                self.histories.histories['simulation_time'] = []
+            self.histories.histories['simulation_time'].append(self.time)
+            
+            # Update other histories
+            self.histories.update_histories()
 
+        self.update_ion_amounts(fluxes)
         self.time += self.time_step
 
     def run(self, progress_callback=None):            
@@ -363,6 +388,9 @@ class Simulation(Configurable, Trackable):
         """
         self.set_ion_amounts()
         self.get_unaccounted_ion_amount()
+        
+        # Reset iteration counter at the start of run
+        self.current_iteration = 0
 
         for iter_idx in range(self.iter_num):
             self.run_one_iteration()
@@ -374,10 +402,13 @@ class Simulation(Configurable, Trackable):
         
         # Make sure final state is recorded
         self.update_simulation_state()
+        
+        # Always save the final iteration point
         self.histories.update_histories()
         
         # Ensure simulation_time includes the final time point
-        self.histories.histories['simulation_time'].append(self.time)
+        if len(self.histories.histories['simulation_time']) == 0 or self.histories.histories['simulation_time'][-1] != self.time:
+            self.histories.histories['simulation_time'].append(self.time)
         
         self.has_run = True
         return self.histories
