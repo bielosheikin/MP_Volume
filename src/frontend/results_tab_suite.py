@@ -848,10 +848,10 @@ class ResultsTabSuite(QWidget):
             graph.axes.set_xlabel(selected['x_label'])
             graph.axes.set_ylabel(selected['y_label'])
             
-            # Add legend if we have multiple entries
-            if len(legend_entries) > 1:
+            # Add legend if we have any entries (changed from > 1 to show legend even for one simulation)
+            if legend_entries:
                 if app_settings.DEBUG_LOGGING:
-                    debug_print("DEBUG: Adding legend with {len(legend_entries)} entries")
+                    debug_print(f"DEBUG: Adding legend with {len(legend_entries)} entries")
                 graph.axes.legend(
                     handles=legend_entries, 
                     fontsize='small',
