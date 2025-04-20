@@ -409,7 +409,25 @@ class SimulationWindow(QMainWindow):
                 
                 # Add to the suite
                 try:
-                    self.suite.add_simulation(new_simulation)
+                    result = self.suite.add_simulation(new_simulation)
+                    if isinstance(result, tuple) and result[0] is False:
+                        QMessageBox.warning(
+                            self,
+                            "Simulation Warning",
+                            result[1]
+                        )
+                        return
+                    
+                    # Save the simulation data to disk
+                    save_result = self.suite.save_simulation(new_simulation)
+                    if isinstance(save_result, tuple) and save_result[0] is False:
+                        QMessageBox.warning(
+                            self,
+                            "Simulation Warning",
+                            save_result[1]
+                        )
+                        return
+                    sim_path = save_result
                 except ValueError as e:
                     # This could happen if a simulation with the same hash already exists
                     QMessageBox.critical(
@@ -419,9 +437,6 @@ class SimulationWindow(QMainWindow):
                         f"A simulation with identical parameters may already exist."
                     )
                     return
-                
-                # Save the simulation data to disk
-                sim_path = self.suite.save_simulation(new_simulation)
                 
                 # Set flag to avoid double-save prompt
                 self.just_saved = True
@@ -490,7 +505,26 @@ class SimulationWindow(QMainWindow):
                 # Check if this exact configuration already exists
                 try:
                     # Add to the suite (which will check for hash conflicts)
-                    self.suite.add_simulation(updated_simulation)
+                    result = self.suite.add_simulation(updated_simulation)
+                    if isinstance(result, tuple) and result[0] is False:
+                        # This happens if an identical simulation already exists
+                        QMessageBox.warning(
+                            self,
+                            "Simulation Warning",
+                            result[1]
+                        )
+                        return
+                    
+                    # Save the simulation data to disk
+                    save_result = self.suite.save_simulation(updated_simulation)
+                    if isinstance(save_result, tuple) and save_result[0] is False:
+                        QMessageBox.warning(
+                            self,
+                            "Simulation Warning",
+                            save_result[1]
+                        )
+                        return
+                    sim_path = save_result
                 except ValueError as e:
                     # This happens if an identical simulation already exists
                     QMessageBox.critical(
@@ -500,9 +534,6 @@ class SimulationWindow(QMainWindow):
                         f"A simulation with identical parameters may already exist."
                     )
                     return
-                
-                # Save the simulation data to disk
-                sim_path = self.suite.save_simulation(updated_simulation)
                 
                 # Set flag to avoid double-save prompt
                 self.just_saved = True

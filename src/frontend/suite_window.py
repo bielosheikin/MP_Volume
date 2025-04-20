@@ -648,7 +648,13 @@ class SuiteWindow(QMainWindow):
             # Define completion callback
             def on_simulation_completed(updated_simulation):
                 # Save the simulation to update its has_run status
-                self.suite.save_simulation(updated_simulation)
+                save_result = self.suite.save_simulation(updated_simulation)
+                if isinstance(save_result, tuple) and save_result[0] is False:
+                    QMessageBox.warning(
+                        self,
+                        "Simulation Warning",
+                        f"Simulation completed but couldn't be saved: {save_result[1]}"
+                    )
                 
                 # Reset progress bar
                 self.progress_bar.setValue(0)
@@ -815,9 +821,15 @@ class SuiteWindow(QMainWindow):
             # Define completion callback
             def on_simulation_completed(updated_simulation):
                 # Save the simulation to update its has_run status
-                self.suite.save_simulation(updated_simulation)
+                save_result = self.suite.save_simulation(updated_simulation)
+                if isinstance(save_result, tuple) and save_result[0] is False:
+                    QMessageBox.warning(
+                        self,
+                        "Simulation Warning",
+                        f"Simulation completed but couldn't be saved: {save_result[1]}"
+                    )
                 
-                # Reset the progress bar
+                # Reset progress bar
                 self.progress_bar.setValue(0)
                 
                 # Clean up and remove manager

@@ -22,7 +22,6 @@ from ..app_settings import DEBUG_LOGGING, MAX_HISTORY_PLOT_POINTS, MAX_HISTORY_S
 
 class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
-    display_name: str = 'simulation'
     time_step: float = 0.001
     total_time: float = 100.0
     temperature: float = 2578.5871 / IDEAL_GAS_CONSTANT
@@ -36,7 +35,7 @@ class Simulation(Configurable, Trackable):
     # Non-config fields
     TRACKABLE_FIELDS = ('buffer_capacity', 'time')
 
-    def __init__(self, simulations_path=None, stored_hash=None, **kwargs):
+    def __init__(self, simulations_path=None, stored_hash=None, display_name='simulation', **kwargs):
         # Initialize both parent classes with their required parameters
         super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
         
@@ -46,6 +45,9 @@ class Simulation(Configurable, Trackable):
         
         # Store the original hash if provided - this prevents hash recalculation issues when loading
         self.stored_hash = stored_hash
+        
+        # Moved display_name from class config to instance attribute
+        self.display_name = display_name
         
         # Track whether this simulation has been run
         self.has_run = False
@@ -473,15 +475,20 @@ class Simulation(Configurable, Trackable):
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "hash": config_hash,
             "index": self.simulation_index,
-            "has_run": self.has_run
+            "has_run": self.has_run,
+            "display_name": self.display_name  # Add display_name to metadata
         }
         
         # Save the configuration in JSON format
         try:
+            # Get config dictionary and add display_name
+            config_dict = self.config.to_dict()
+            config_dict["display_name"] = self.display_name  # Add display_name to config dictionary
+            
             # Create a dictionary with metadata and simulation config
             config_with_metadata = {
                 "metadata": metadata,
-                "simulation": self.config.to_dict()
+                "simulation": config_dict
             }
             
             # Save to JSON
@@ -494,7 +501,9 @@ class Simulation(Configurable, Trackable):
             # Also save the raw simulation configuration
             raw_config_path = os.path.join(simulation_dir, "raw_config.json")
             with open(raw_config_path, 'w') as f:
-                json.dump(self.config.to_dict(), f, indent=4, default=str)
+                config_dict = self.config.to_dict()
+                config_dict["display_name"] = self.display_name  # Add display_name to raw config
+                json.dump(config_dict, f, indent=4, default=str)
                 
         except Exception as e:
             if DEBUG_LOGGING:
@@ -514,7 +523,7 @@ class Simulation(Configurable, Trackable):
         
         # Add specific known parameters that should be included
         essential_params = [
-            "display_name", "time_step", "total_time", "temperature", 
+            "time_step", "total_time", "temperature", 
             "init_buffer_capacity"
         ]
         for param in essential_params:
@@ -523,6 +532,8 @@ class Simulation(Configurable, Trackable):
         
         # Add non-config parameters that should be tracked
         config_data["simulation_config"]["simulation_index"] = self.simulation_index
+        config_data["simulation_config"]["display_name"] = self.display_name  # Add display_name to pickle
+        config_data["simulation_config"]["has_run"] = self.has_run
         
         # Save the configuration data to pickle file
         try:
@@ -582,3 +593,13 @@ class Simulation(Configurable, Trackable):
                 print(f"Using stored hash to maintain consistency")
             return self.stored_hash
         return self.config.to_sha256_str()
+
+    def __hash__(self):
+        """Return hash value for the simulation to allow use in sets."""
+        return hash(self.get_hash())
+        
+    def __eq__(self, other):
+        """Define equality based on simulation hash."""
+        if not isinstance(other, Simulation):
+            return False
+        return self.get_hash() == other.get_hash()

@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set, Union, Tuple
 import os
 import json
 import pickle
@@ -32,7 +32,8 @@ class SimulationSuite:
         """
         self.suite_name = suite_name
         self.simulation_suites_root = simulation_suites_root
-        self.simulations: List[Simulation] = []
+        # Changed from List to set to prevent duplicates
+        self.simulations = set()
         
         # Create the suite directory structure if it doesn't exist
         self.suite_path = os.path.join(self.simulation_suites_root, self.suite_name)
@@ -90,8 +91,8 @@ class SimulationSuite:
                         if item in suite_sim_info and getattr(simulation, 'simulation_index', 0) == 0:
                             simulation.simulation_index = suite_sim_info[item]['index']
                             
-                        # Add to the list
-                        self.simulations.append(simulation)
+                        # Add to the set
+                        self.simulations.add(simulation)
             
             # Synchronize simulation indices to ensure consistency
             if local_debug:
@@ -245,7 +246,12 @@ class SimulationSuite:
                     # Create a new simulation with the basic parameters
                     # Extract the essential parameters
                     sim_index = metadata.get("index", 1)
-                    display_name = sim_config.get("display_name", "Reconstructed Simulation")
+                    
+                    # Check both metadata and sim_config for display_name with metadata taking precedence
+                    display_name = metadata.get("display_name")
+                    if display_name is None:
+                        display_name = sim_config.get("display_name", "Reconstructed Simulation")
+                    
                     time_step = float(sim_config.get("time_step", 0.001))
                     total_time = float(sim_config.get("total_time", 100.0))
                     temperature = float(sim_config.get("temperature", 310.0))
@@ -436,7 +442,12 @@ class SimulationSuite:
                         
                         # Extract essential parameters, handling different structures
                         sim_index = metadata.get("index", pickle_data.get("simulation_index", 1))
-                        display_name = sim_config.get("display_name", pickle_data.get("display_name", "Reconstructed Simulation"))
+                        
+                        # Check both metadata and sim_config for display_name with metadata taking precedence
+                        display_name = metadata.get("display_name")
+                        if display_name is None:
+                            display_name = sim_config.get("display_name", pickle_data.get("display_name", "Reconstructed Simulation"))
+                        
                         time_step = float(sim_config.get("time_step", pickle_data.get("time_step", 0.001)))
                         total_time = float(sim_config.get("total_time", pickle_data.get("total_time", 100.0)))
                         temperature = float(sim_config.get("temperature", pickle_data.get("temperature", 310.0)))
@@ -602,7 +613,7 @@ class SimulationSuite:
                 print(f"!!! Traceback: {traceback.format_exc()}")
             return None
     
-    def add_simulation(self, simulation: Simulation) -> bool:
+    def add_simulation(self, simulation: Simulation) -> Union[bool, Tuple[bool, str]]:
         """
         Add a simulation to the suite.
         
@@ -610,10 +621,8 @@ class SimulationSuite:
             simulation: The Simulation object to add
             
         Returns:
-            True if added successfully, False otherwise
-            
-        Raises:
-            ValueError: If a simulation with the same hash already exists in the suite
+            If successful: True
+            If failed: (False, error_message) tuple with explanation
         """
         # Generate the simulation hash
         sim_hash = simulation.get_hash()
@@ -621,7 +630,11 @@ class SimulationSuite:
         # Check if this simulation already exists in the suite
         sim_path = os.path.join(self.suite_path, sim_hash)
         if os.path.exists(sim_path):
-            raise ValueError(f"A simulation with hash {sim_hash} already exists in this suite.")
+            return False, f"A simulation with identical parameters already exists. Please modify parameters to create a unique simulation."
+        
+        # Also check if simulation with the same hash is already in our set
+        if any(sim.get_hash() == sim_hash for sim in self.simulations):
+            return False, f"A simulation with identical parameters already exists. Please modify parameters to create a unique simulation."
         
         # Set the simulation's path to point to the suite directory
         simulation.simulations_path = self.suite_path
@@ -632,8 +645,8 @@ class SimulationSuite:
             if DEBUG_LOGGING:
                 print(f"Updated simulation index to {simulation.simulation_index} before adding to suite")
         
-        # Add to the internal list
-        self.simulations.append(simulation)
+        # Add to the internal set
+        self.simulations.add(simulation)
         
         # Force save the simulation to disk immediately, even if it hasn't been run
         # This ensures the simulation directory exists with proper config files
@@ -771,9 +784,9 @@ class SimulationSuite:
                 print(f"Warning: Failed to remove simulation directory: {str(e)}")
             return False
         
-        # Remove from our internal list
-        self.simulations = [sim for sim in self.simulations 
-                            if sim.get_hash() != simulation_hash]
+        # Remove from our internal set
+        self.simulations = {sim for sim in self.simulations 
+                           if sim.get_hash() != simulation_hash}
         
         # Save updated suite configuration
         self._save_suite_config()
@@ -790,7 +803,7 @@ class SimulationSuite:
         Returns:
             The Simulation object if found, None otherwise
         """
-        # First, check our in-memory list
+        # First, check our in-memory set
         for sim in self.simulations:
             if sim.get_hash() == simulation_hash:
                 return sim
@@ -811,32 +824,27 @@ class SimulationSuite:
         result = []
         problematic_sims = []
         
-        # First, collect from our in-memory simulations
+        # First check our in-memory simulations
         for sim in self.simulations:
             try:
                 sim_hash = sim.get_hash()
-                result.append({
+                
+                # Basic info to include in the list
+                sim_info = {
                     "hash": sim_hash,
                     "display_name": sim.display_name,
                     "index": sim.simulation_index,
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),  # Current time for in-memory sims
-                    "has_run": sim.has_run
-                })
+                    "has_run": sim.has_run,
+                    "time_step": sim.time_step,
+                    "total_time": sim.total_time
+                }
+                
+                # Add to the list if not already present
+                if not any(r["hash"] == sim_hash for r in result):
+                    result.append(sim_info)
             except Exception as e:
-                if DEBUG_LOGGING:
-                    print(f"Warning: Error getting data for in-memory simulation: {str(e)}")
-                if not skip_problematic:
-                    # If we encounter an error, mark this simulation as problematic
-                    hash_value = getattr(sim, 'sim_hash', "unknown")
-                    problematic_sims.append({
-                        "hash": hash_value,
-                        "display_name": f"Error: {str(e)}",
-                        "index": 0,
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "has_run": False,
-                        "is_problematic": True
-                    })
-        
+                problematic_sims.append(f"Error processing simulation {getattr(sim, 'display_name', 'Unknown')}: {str(e)}")
+                
         # Then check the filesystem for any we don't have in memory
         # But use only config.json files (avoid loading pickle files which can be slow)
         try:
@@ -983,7 +991,7 @@ class SimulationSuite:
         
         return result
     
-    def save_simulation(self, simulation: Simulation) -> str:
+    def save_simulation(self, simulation: Simulation) -> Union[str, Tuple[bool, str]]:
         """
         Save a simulation to the suite.
         
@@ -991,9 +999,10 @@ class SimulationSuite:
             simulation: The Simulation object to save
             
         Returns:
-            The path where the simulation was saved
+            If successful: path where the simulation was saved
+            If failed: (False, error_message) tuple with explanation
         """
-        # Check if the simulation is already in our list
+        # Check if the simulation is already in our set
         sim_hash = simulation.get_hash()
         
         # Ensure simulation has a valid index before saving
@@ -1003,8 +1012,12 @@ class SimulationSuite:
                 print(f"Updated simulation index to {simulation.simulation_index} before saving")
                 
         if not any(sim.get_hash() == sim_hash for sim in self.simulations):
-            # Add to our list first (which will force-save and call _save_suite_config)
-            self.add_simulation(simulation)
+            # Add to our set first (which will force-save and call _save_suite_config)
+            result = self.add_simulation(simulation)
+            # If add_simulation returned an error tuple, pass it along
+            if isinstance(result, tuple) and result[0] is False:
+                return result
+            # Otherwise return the path
             return os.path.join(self.suite_path, sim_hash)
         
         # Set the path to the suite directory
