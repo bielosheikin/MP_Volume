@@ -13,6 +13,7 @@ import csv
 import random
 from PyQt5.QtWidgets import QApplication
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 from .multi_graph_widget import MultiGraphWidget
 from .. import app_settings
@@ -144,6 +145,9 @@ class ResultsTabSuite(QWidget):
         # Replace the update_all_graphs method
         self.graph_widget.update_all_graphs = update_all_graphs
         
+        # Connect signals for the graph widget
+        self.graph_widget.save_all_to_pdf_requested.connect(self.save_all_to_pdf)
+        
         # Add to splitter
         self.splitter.addWidget(self.graph_widget)
     
@@ -169,10 +173,17 @@ class ResultsTabSuite(QWidget):
             debug_print(f"DEBUG: Disconnected remove_requested for graph {graph.graph_id}")
         except:
             pass
+            
+        try:
+            graph.download_png_requested.disconnect()
+            debug_print(f"DEBUG: Disconnected download_png_requested for graph {graph.graph_id}")
+        except:
+            pass
         
         # Connect the signals properly
         graph.plot_requested.connect(self._on_plot_requested)
         graph.export_requested.connect(self._on_export_requested)
+        graph.download_png_requested.connect(lambda g=graph: self._on_download_png_requested(g))
         
         # THIS IS KEY: Direct connection to the original remove_graph method
         graph.remove_requested.connect(lambda g=graph: self.original_remove_graph(g))
@@ -188,6 +199,12 @@ class ResultsTabSuite(QWidget):
         """Slot to handle export_requested signal"""
         debug_print(f"DEBUG: _on_export_requested received for graph {graph.graph_id}")
         self.export_to_csv(graph)
+        
+    def _on_download_png_requested(self, graph):
+        """Slot to handle download_png_requested signal"""
+        debug_print(f"DEBUG: _on_download_png_requested received for graph {graph.graph_id}")
+        # The actual download functionality is handled in the GraphWidget class
+        # This method exists for consistency with the signal/slot pattern
     
     def load_suite_simulations(self, suite=None):
         """Load all simulations from the suite"""
@@ -1133,3 +1150,62 @@ class ResultsTabSuite(QWidget):
                               "Select simulations from the list on the left.",
                               ha='center', va='center', fontsize=12)
                 graph.canvas.draw() 
+
+    def save_graph_to_png(self, graph):
+        """Save a specific graph to PNG file"""
+        # The download functionality is handled directly in the GraphWidget class
+        # This method exists to maintain consistency with signal connections
+        pass
+
+    def save_all_to_pdf(self):
+        """Export all graphs to a single PDF file"""
+        if not self.graph_widget.graphs:
+            debug_print("No graphs available to export")
+            return
+        
+        # Ask user where to save the PDF
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save All Graphs to PDF",
+            "",
+            "PDF Files (*.pdf);;All Files (*)"
+        )
+        
+        if not file_path:
+            # User canceled
+            return
+        
+        # Ensure the filename has .pdf extension
+        if not file_path.lower().endswith('.pdf'):
+            file_path += '.pdf'
+        
+        try:
+            # Create a PdfPages object
+            with PdfPages(file_path) as pdf:
+                # For each graph, generate a figure and save it to the PDF
+                for i, graph in enumerate(self.graph_widget.graphs):
+                    # Only save if the graph has data
+                    if graph.axes.lines:
+                        # Get graph title
+                        selected = graph.get_selected_variables()
+                        title = selected.get('title', f"Graph {i+1}")
+                        
+                        # Apply tight layout to make sure everything fits
+                        graph.figure.tight_layout()
+                        
+                        # Add the figure to the PDF
+                        pdf.savefig(graph.figure, bbox_inches='tight')
+                
+                # Set PDF metadata
+                d = pdf.infodict()
+                d['Title'] = 'Simulation Results'
+                d['Subject'] = 'Graphs from simulation suite'
+                d['Keywords'] = 'matplotlib, simulations, graphs'
+                d['Creator'] = 'MP Volume Simulator'
+            
+            debug_print(f"All graphs exported to PDF: {file_path}")
+                
+        except Exception as e:
+            debug_print(f"Error exporting graphs to PDF: {str(e)}")
+            import traceback
+            traceback.print_exc() 

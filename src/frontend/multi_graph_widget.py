@@ -1,10 +1,12 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, 
-    QComboBox, QLabel, QScrollArea, QFrame, QLineEdit, QSizePolicy
+    QComboBox, QLabel, QScrollArea, QFrame, QLineEdit, QSizePolicy,
+    QFileDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import os
 
 
 class GraphWidget(QWidget):
@@ -18,6 +20,9 @@ class GraphWidget(QWidget):
     
     # Signal emitted when the plot button is clicked
     plot_requested = pyqtSignal(object)  # Sends self as parameter
+    
+    # Signal emitted when download PNG is requested
+    download_png_requested = pyqtSignal(object)  # Sends self as parameter
     
     # Fixed height for all graph widgets - use taller height for better fullscreen display
     GRAPH_HEIGHT = 800
@@ -53,6 +58,11 @@ class GraphWidget(QWidget):
         
         # Button container
         button_layout = QHBoxLayout()
+        
+        # Download PNG button
+        self.download_png_button = QPushButton("Download PNG")
+        self.download_png_button.clicked.connect(self._request_download_png)
+        button_layout.addWidget(self.download_png_button)
         
         # Export button
         self.export_button = QPushButton("Export CSV")
@@ -156,56 +166,73 @@ class GraphWidget(QWidget):
             'x_label': x_label,
             'y_label': y_label
         }
-        
-    def _update_default_labels(self):
-        """Update the default labels and title based on the selected variables"""
-        x_var = self.x_axis_combo.currentText()
-        y_var = self.y_axis_combo.currentText()
-        
-        # Only update if fields are empty or contain default values
-        if not self.x_label_edit.text():
-            self.x_label_edit.setPlaceholderText(x_var)
-        
-        if not self.y_label_edit.text():
-            self.y_label_edit.setPlaceholderText(y_var)
-        
-        # Only update title if it's the default
-        if not self.title_edit.text() or self.title_edit.text() == f"Graph {self.graph_id}":
-            self.title_edit.setPlaceholderText(f"{y_var} vs {x_var}")
     
-    def update_variables(self, variables):
-        """Update available variables in the dropdowns"""
+    def update_variables(self, variables=None):
+        """Update the available variables in the dropdown"""
         if not variables:
             return
             
+        # Store previous selections (if any)
+        x_selected = self.x_axis_combo.currentText() if self.x_axis_combo.count() > 0 else ''
+        y_selected = self.y_axis_combo.currentText() if self.y_axis_combo.count() > 0 else ''
+        
+        # Remember if we've already made a selection 
+        has_selection = (x_selected and y_selected)
+        
+        # Update variable list
         self.variables = variables
         
-        # Store current selections
-        current_x = self.x_axis_combo.currentText()
-        current_y = self.y_axis_combo.currentText()
+        # Update comboboxes
+        self.x_axis_combo.blockSignals(True)  # Block signals to prevent multiple updates
+        self.y_axis_combo.blockSignals(True)
         
-        # Update the combo boxes
+        # Clear and refill combos
         self.x_axis_combo.clear()
-        self.x_axis_combo.addItems(variables)
-        
         self.y_axis_combo.clear()
+        
+        self.x_axis_combo.addItems(variables)
         self.y_axis_combo.addItems(variables)
         
-        # Restore selections if they still exist
-        if current_x in variables:
-            self.x_axis_combo.setCurrentText(current_x)
-        elif 'simulation_time' in variables:
+        # Restore selections if they're still valid
+        if x_selected in variables:
+            self.x_axis_combo.setCurrentText(x_selected)
+        elif 'simulation_time' in variables and not has_selection:
+            # Default to time if we don't have a previous selection
             self.x_axis_combo.setCurrentText('simulation_time')
-        elif 'time' in variables:
+        elif 'time' in variables and not has_selection:
             self.x_axis_combo.setCurrentText('time')
             
-        if current_y in variables:
-            self.y_axis_combo.setCurrentText(current_y)
-        elif 'Vesicle_pH' in variables:
+        if y_selected in variables:
+            self.y_axis_combo.setCurrentText(y_selected)
+        elif 'Vesicle_pH' in variables and not has_selection:
+            # Default to pH if available and we don't have a previous selection
             self.y_axis_combo.setCurrentText('Vesicle_pH')
             
-        # Update default labels based on new selections
+        self.x_axis_combo.blockSignals(False)
+        self.y_axis_combo.blockSignals(False)
+        
+        # Update the placeholder labels
         self._update_default_labels()
+    
+    def _update_default_labels(self):
+        """Update the default labels for the axis based on selections"""
+        # Get the current selections
+        x_var = self.x_axis_combo.currentText()
+        y_var = self.y_axis_combo.currentText()
+        
+        # Update placeholders
+        if x_var:
+            self.x_label_edit.setPlaceholderText(x_var)
+        if y_var:
+            self.y_label_edit.setPlaceholderText(y_var)
+            
+        # Update title placeholder if title is empty or default
+        current_title = self.title_edit.text()
+        if not current_title or current_title == f"Graph {self.graph_id}":
+            if x_var and y_var:
+                self.title_edit.setPlaceholderText(f"{y_var} vs {x_var}")
+            else:
+                self.title_edit.setPlaceholderText(f"Graph {self.graph_id}")
     
     def _request_plot(self):
         """Emit signal to request a plot update"""
@@ -248,6 +275,43 @@ class GraphWidget(QWidget):
         """Emit signal to request export of this graph's data"""
         self.export_requested.emit(self)
     
+    def _request_download_png(self):
+        """Handle request to download graph as PNG"""
+        # Emit the signal first
+        self.download_png_requested.emit(self)
+        
+        # Get the selected variables for the filename
+        selected = self.get_selected_variables()
+        title = selected['title']
+        
+        # Check if the plot has data
+        if not self.axes.lines:
+            return
+        
+        # Ask user where to save
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            f"Save '{title}' as PNG",
+            f"{title}.png",
+            "PNG Files (*.png);;All Files (*)"
+        )
+        
+        if not file_path:
+            # User canceled
+            return
+            
+        # Ensure the filename has .png extension
+        if not file_path.lower().endswith('.png'):
+            file_path += '.png'
+            
+        # Save the figure
+        try:
+            # Apply tight layout to make sure everything fits
+            self.figure.tight_layout()
+            self.figure.savefig(file_path, format='png', dpi=300, bbox_inches='tight')
+        except Exception as e:
+            print(f"Error saving PNG: {str(e)}")
+    
     def clear_plot(self):
         """Clear the plot"""
         self.axes.clear()
@@ -256,6 +320,9 @@ class GraphWidget(QWidget):
 
 class MultiGraphWidget(QWidget):
     """Widget that contains multiple graphs in a scrollable area"""
+    
+    # Signal to request export of all graphs to PDF
+    save_all_to_pdf_requested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -301,6 +368,11 @@ class MultiGraphWidget(QWidget):
         self.add_button = QPushButton("Add New Graph")
         self.add_button.clicked.connect(self.add_graph)
         button_layout.addWidget(self.add_button)
+        
+        # Add Save All to PDF button
+        self.save_pdf_button = QPushButton("Save All Graphs to PDF")
+        self.save_pdf_button.clicked.connect(self._request_save_all_to_pdf)
+        button_layout.addWidget(self.save_pdf_button)
         
         self.layout.addWidget(button_container)
         
@@ -439,4 +511,8 @@ class MultiGraphWidget(QWidget):
     
     def export_graph(self, graph):
         """Export a specific graph's data - this method will be overridden by parent"""
-        pass 
+        pass
+        
+    def _request_save_all_to_pdf(self):
+        """Emit signal to request saving all graphs to PDF"""
+        self.save_all_to_pdf_requested.emit() 
