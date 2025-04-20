@@ -32,6 +32,7 @@ class GraphWidget(QWidget):
         super().__init__(parent)
         self.graph_id = graph_id
         self.variables = variables or []
+        self._direct_export_handled = False  # Flag to prevent duplicate export calls
         
         # Key change: Use Fixed policy for vertical sizing to ensure it never resizes
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -273,7 +274,25 @@ class GraphWidget(QWidget):
     
     def _request_export(self):
         """Emit signal to request export of this graph's data"""
+        # Set a flag on the graph to indicate we're handling export directly
+        self._direct_export_handled = True
+        
+        # Important: Emit the signal first
         self.export_requested.emit(self)
+        
+        # Find the direct parent which should be ResultsTabSuite
+        # Walk up until we find a parent with export_to_csv method
+        current = self
+        while current and current.parent():
+            current = current.parent()
+            # Check if we found a parent with export_to_csv method
+            if hasattr(current, 'export_to_csv'):
+                # Call it directly - this is more reliable than signal/slot
+                current.export_to_csv(self)
+                return
+                
+        # If we didn't find a parent to handle it directly, clear the flag
+        self._direct_export_handled = False
     
     def _request_download_png(self):
         """Handle request to download graph as PNG"""

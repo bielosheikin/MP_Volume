@@ -34,6 +34,7 @@ class ResultsTabSuite(QWidget):
         self.suite = suite
         self.simulation_data = {}  # Dictionary to hold loaded simulation data
         self.selected_simulations = []  # List of selected simulation hashes
+        self.exporting_graphs = set()  # Set to track graphs that are currently being exported
         
         # Create the main layout
         self.main_layout = QVBoxLayout()
@@ -124,16 +125,8 @@ class ResultsTabSuite(QWidget):
         for graph in self.graph_widget.graphs:
             self._connect_graph_signals(graph)
         
-        # Define a new add_graph method that connects signals
-        def new_add_graph():
-            debug_print("DEBUG: Creating new graph")
-            graph = self.original_add_graph()  # Call original method
-            debug_print(f"DEBUG: New graph created with ID {graph.graph_id}")
-            self._connect_graph_signals(graph)
-            return graph
-        
-        # Replace the add_graph method
-        self.graph_widget.add_graph = new_add_graph
+        # Replace the add_graph method with our wrapper
+        self.graph_widget.add_graph = self.new_add_graph
         
         # Define update_all_graphs method to properly handle all graphs
         def update_all_graphs():
@@ -150,6 +143,23 @@ class ResultsTabSuite(QWidget):
         
         # Add to splitter
         self.splitter.addWidget(self.graph_widget)
+    
+    def new_add_graph(self):
+        """Add a new graph and connect signals"""
+        # First, use the original method to add the graph
+        debug_print("DEBUG: Creating new graph")
+        graph = self.original_add_graph()
+        debug_print(f"DEBUG: New graph created with ID {graph.graph_id}")
+        
+        # Connect signals for this graph
+        graph.remove_requested.connect(lambda g: self.original_remove_graph(g))
+        graph.plot_requested.connect(self._on_plot_requested)
+        graph.export_requested.connect(self._on_export_requested)
+        graph.download_png_requested.connect(lambda g: self._on_download_png_requested(g))
+        debug_print(f"DEBUG: Connected signals for new graph {graph.graph_id}")
+        
+        # Return the new graph
+        return graph
     
     def _connect_graph_signals(self, graph):
         """Helper method to connect signals for a graph"""
@@ -198,6 +208,14 @@ class ResultsTabSuite(QWidget):
     def _on_export_requested(self, graph):
         """Slot to handle export_requested signal"""
         debug_print(f"DEBUG: _on_export_requested received for graph {graph.graph_id}")
+        
+        # Skip if this graph was already handled by direct method call
+        if hasattr(graph, '_direct_export_handled') and graph._direct_export_handled:
+            debug_print(f"DEBUG: Export already handled directly for graph {graph.graph_id}")
+            # Clear the flag after checking it
+            graph._direct_export_handled = False
+            return
+            
         self.export_to_csv(graph)
         
     def _on_download_png_requested(self, graph):
@@ -932,90 +950,100 @@ class ResultsTabSuite(QWidget):
                 debug_print("No graphs available to export")
                 return
             graph = self.graph_widget.graphs[0]
-        
-        # Get selected variables for this graph
-        selected = graph.get_selected_variables()
-        x_var = selected['x_var']
-        y_var = selected['y_var']
-        title = selected['title']
-        
-        if not x_var or not y_var or not self.selected_simulations:
-            debug_print("Nothing to export")
-            return
-        
-        # Ask user where to save
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            f"Save '{title}' Data",
-            "",
-            "CSV Files (*.csv);;All Files (*)"
-        )
-        
-        if not file_path:
-            # User canceled
+            
+        # Prevent duplicate calls for the same graph
+        graph_id = id(graph)
+        if graph_id in self.exporting_graphs:
+            debug_print(f"DEBUG: Already exporting graph {graph.graph_id}, skipping duplicate call")
             return
             
+        # Add this graph to the exporting set
+        self.exporting_graphs.add(graph_id)
+        
         try:
-            with open(file_path, 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                
-                # Write header row
-                header = [x_var]
-                for sim_hash in self.selected_simulations:
-                    if sim_hash in self.simulation_data:
-                        sim_name = self.simulation_data[sim_hash]['display_name']
-                        header.append(f"{sim_name} - {y_var}")
-                
-                writer.writerow(header)
-                
-                # Find the maximum data length and load first simulation's X data
-                max_length = 0
-                first_sim = self.selected_simulations[0] if self.selected_simulations else None
-                x_data = None
-                
-                if first_sim in self.simulation_data:
-                    # Lazy load the x data for first simulation - pass None to avoid affecting graphs
-                    x_data = self.get_simulation_variable(first_sim, x_var, current_graph=None)
-                    if x_data is not None:
-                        max_length = len(x_data)
-                
-                # Load y values for all simulations (only once)
-                y_values = []
-                for sim_hash in self.selected_simulations:
-                    if sim_hash in self.simulation_data:
-                        # Lazy load y data - pass None to avoid affecting graphs
-                        y_data = self.get_simulation_variable(sim_hash, y_var, current_graph=None)
-                        if y_data is not None:
-                            y_values.append(y_data)
-                            max_length = max(max_length, len(y_data))
-                        else:
-                            y_values.append(None)
-                    else:
-                        y_values.append(None)
-                
-                # Write data rows
-                for i in range(max_length):
-                    row = []
-                    
-                    # First add the X value
-                    if x_data is not None and i < len(x_data):
-                        row.append(x_data[i])
-                    else:
-                        row.append('')
-                    
-                    # Add Y values for each simulation
-                    for j, y_data in enumerate(y_values):
-                        if y_data is not None and i < len(y_data):
-                            row.append(y_data[i])
-                        else:
-                            row.append('')
-                    
-                    writer.writerow(row)
+            # Get selected variables for this graph
+            selected = graph.get_selected_variables()
+            x_var = selected['x_var']
+            y_var = selected['y_var']
+            title = selected['title']
             
-            debug_print(f"Data exported to {file_path}")
+            # Check if this graph has data to export
+            if not hasattr(graph.axes, 'lines') or not graph.axes.lines:
+                debug_print("No plotted data to export")
+                graph.axes.text(0.5, 0.5, "No data to export.\nPlease plot the graph first.",
+                         ha='center', va='center', fontsize=12)
+                graph.canvas.draw()
+                return
+            
+            # Ask user where to save
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                f"Save '{title}' Data",
+                "",
+                "CSV Files (*.csv);;All Files (*)"
+            )
+            
+            if not file_path:
+                # User canceled
+                return
                 
-        except Exception as e:
-            debug_print(f"Error exporting data: {str(e)}")
+            try:
+                with open(file_path, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Get the lines that are actually plotted on this graph
+                    lines = graph.axes.lines
+                    
+                    # Write header row
+                    header = [x_var]
+                    for line in lines:
+                        # Line labels already include simulation names in the format "SimName (#ID)"
+                        # but let's make it even clearer by adding the y-variable name
+                        line_label = line.get_label()
+                        header.append(f"{line_label} - {y_var}")
+                    
+                    writer.writerow(header)
+                    
+                    # Get the data from each line
+                    x_data_list = []
+                    y_data_list = []
+                    max_length = 0
+                    
+                    for line in lines:
+                        # Get the x and y data directly from the plotted line
+                        x_data = line.get_xdata()
+                        y_data = line.get_ydata()
+                        x_data_list.append(x_data)
+                        y_data_list.append(y_data)
+                        max_length = max(max_length, len(x_data))
+                    
+                    # Use the first line's x-data as the reference
+                    if x_data_list:
+                        reference_x = x_data_list[0]
+                        
+                        # Write data rows
+                        for i in range(len(reference_x)):
+                            row = [reference_x[i]]  # Add X value
+                            
+                            # Add Y values for each plotted line
+                            for y_data in y_data_list:
+                                if i < len(y_data):
+                                    row.append(y_data[i])
+                                else:
+                                    row.append('')
+                            
+                            writer.writerow(row)
+                
+                debug_print(f"Data exported to {file_path}")
+                    
+            except Exception as e:
+                debug_print(f"Error exporting data: {str(e)}")
+                import traceback
+                traceback.print_exc()
+        
+        finally:
+            # Always remove the graph from the exporting set when done
+            self.exporting_graphs.discard(graph_id)
 
     def export_all_to_csv(self):
         """Export data from all graphs to a single directory"""
