@@ -48,6 +48,7 @@ class SimulationWindow(QMainWindow):
         self.is_new = simulation is None
         self.just_saved = False  # Flag to track if simulation was just saved
         self.skip_close_confirmation = False  # Flag to track if we should skip close confirmation
+        self.read_only = False  # Flag to track if the window is in read-only mode
         
         # Set window title based on whether we're creating a new simulation or editing an existing one
         if self.is_new:
@@ -362,61 +363,30 @@ class SimulationWindow(QMainWindow):
             return None
     
     def save_simulation(self):
-        """Create or update a simulation with the current tab data"""
-        # Gather data from all tabs
-        simulation_data = self.get_simulation_data()
-        if not simulation_data:
-            return
-        
+        """Save the simulation data"""
         try:
-            # Create the simulation object
+            # Get the updated simulation data
+            simulation_data = self.get_simulation_data()
+            if not simulation_data:
+                return False
+            
             if self.is_new:
-                # Create a new simulation
+                # We're creating a new simulation
+                
+                # Create a new simulation with the data
                 new_simulation = Simulation(**simulation_data)
                 
-                # Check if the name already exists in the suite
-                existing_simulations = self.suite.list_simulations()
-                name_conflicts = [sim for sim in existing_simulations if sim['display_name'] == new_simulation.display_name]
-                
-                if name_conflicts:
-                    # Ask user to confirm overwrite or change name
-                    reply = QMessageBox.question(
-                        self,
-                        "Name Already Exists",
-                        f"A simulation with the name '{new_simulation.display_name}' already exists.\n"
-                        f"Would you like to use a different name?",
-                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                        QMessageBox.Yes
-                    )
-                    
-                    if reply == QMessageBox.Cancel:
-                        return
-                    elif reply == QMessageBox.Yes:
-                        # Ask for a new name
-                        new_name, ok = QInputDialog.getText(
-                            self,
-                            "New Simulation Name",
-                            "Enter a name for the simulation:",
-                            QLineEdit.Normal,
-                            f"{new_simulation.display_name} (new)"
-                        )
-                        
-                        if ok and new_name:
-                            new_simulation.display_name = new_name
-                        else:
-                            # User cancelled the name dialog
-                            return
-                
-                # Add to the suite
                 try:
+                    # Add to the suite (which will check for hash conflicts)
                     result = self.suite.add_simulation(new_simulation)
                     if isinstance(result, tuple) and result[0] is False:
+                        # This happens if an identical simulation already exists
                         QMessageBox.warning(
                             self,
                             "Simulation Warning",
                             result[1]
                         )
-                        return
+                        return False
                     
                     # Save the simulation data to disk
                     save_result = self.suite.save_simulation(new_simulation)
@@ -426,17 +396,17 @@ class SimulationWindow(QMainWindow):
                             "Simulation Warning",
                             save_result[1]
                         )
-                        return
+                        return False
                     sim_path = save_result
                 except ValueError as e:
-                    # This could happen if a simulation with the same hash already exists
+                    # This happens if an identical simulation already exists
                     QMessageBox.critical(
                         self,
                         "Simulation Error",
-                        f"Could not add simulation: {str(e)}\n\n"
+                        f"Could not create simulation: {str(e)}\n\n"
                         f"A simulation with identical parameters may already exist."
                     )
-                    return
+                    return False
                 
                 # Set flag to avoid double-save prompt
                 self.just_saved = True
@@ -452,6 +422,7 @@ class SimulationWindow(QMainWindow):
                 
                 # Close the window
                 self.close()
+                return True
             else:
                 # We're updating an existing simulation
                 
@@ -463,92 +434,437 @@ class SimulationWindow(QMainWindow):
                         "No changes detected in the simulation parameters."
                     )
                     self.close()
-                    return
+                    return True
                 
-                # Ask for confirmation before creating a new simulation
-                reply = QMessageBox.question(
-                    self,
-                    "Confirm Update",
-                    f"Are you sure you want to update the simulation '{self.simulation.display_name}'?\n\n"
-                    f"This will create a new simulation with the updated parameters.\n"
-                    f"It's recommended to provide a different name for the new simulation.",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                
-                if reply != QMessageBox.Yes:
-                    return
-                
-                # Always ask for a new name to avoid confusion
-                original_name = simulation_data['display_name']
-                default_new_name = f"{original_name} (modified)"
-                
-                new_name, ok = QInputDialog.getText(
-                    self,
-                    "New Simulation Name",
-                    "Enter a name for the new simulation:",
-                    QLineEdit.Normal,
-                    default_new_name
-                )
-                
-                if not ok:
-                    # User cancelled the name dialog
-                    return
-                
-                # Update the display name in the simulation data
-                if new_name:
-                    simulation_data['display_name'] = new_name
-                
-                # Create a new simulation with updated parameters
-                updated_simulation = Simulation(**simulation_data)
-                
-                # Check if this exact configuration already exists
-                try:
-                    # Add to the suite (which will check for hash conflicts)
-                    result = self.suite.add_simulation(updated_simulation)
-                    if isinstance(result, tuple) and result[0] is False:
-                        # This happens if an identical simulation already exists
-                        QMessageBox.warning(
-                            self,
-                            "Simulation Warning",
-                            result[1]
-                        )
-                        return
-                    
-                    # Save the simulation data to disk
-                    save_result = self.suite.save_simulation(updated_simulation)
-                    if isinstance(save_result, tuple) and save_result[0] is False:
-                        QMessageBox.warning(
-                            self,
-                            "Simulation Warning",
-                            save_result[1]
-                        )
-                        return
-                    sim_path = save_result
-                except ValueError as e:
-                    # This happens if an identical simulation already exists
-                    QMessageBox.critical(
+                # Check if the simulation has been run
+                if self.simulation.has_run:
+                    # Ask for confirmation before creating a new simulation
+                    reply = QMessageBox.question(
                         self,
-                        "Simulation Error",
-                        f"Could not create updated simulation: {str(e)}\n\n"
-                        f"A simulation with identical parameters may already exist."
+                        "Confirm Update",
+                        f"Are you sure you want to update the simulation '{self.simulation.display_name}'?\n\n"
+                        f"This will create a new simulation with the updated parameters.\n"
+                        f"It's recommended to provide a different name for the new simulation.",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
                     )
-                    return
-                
-                # Set flag to avoid double-save prompt
-                self.just_saved = True
-                
-                QMessageBox.information(
-                    self,
-                    "Simulation Updated",
-                    f"Simulation updated successfully as '{updated_simulation.display_name}'."
-                )
-                
-                # Emit signal that a simulation was updated
-                self.simulation_saved.emit(updated_simulation)
-                
-                # Close the window
-                self.close()
+                    
+                    if reply != QMessageBox.Yes:
+                        return False
+                    
+                    # Always ask for a new name to avoid confusion
+                    original_name = simulation_data['display_name']
+                    default_new_name = f"{original_name} (modified)"
+                    
+                    new_name, ok = QInputDialog.getText(
+                        self,
+                        "New Simulation Name",
+                        "Enter a name for the new simulation:",
+                        QLineEdit.Normal,
+                        default_new_name
+                    )
+                    
+                    if not ok:
+                        # User cancelled the name dialog
+                        return False
+                    
+                    # Update the display name in the simulation data
+                    if new_name:
+                        simulation_data['display_name'] = new_name
+                    
+                    # Create a new simulation with updated parameters
+                    updated_simulation = Simulation(**simulation_data)
+                    
+                    # Check if this exact configuration already exists
+                    try:
+                        # Add to the suite (which will check for hash conflicts)
+                        result = self.suite.add_simulation(updated_simulation)
+                        if isinstance(result, tuple) and result[0] is False:
+                            # This happens if an identical simulation already exists
+                            QMessageBox.warning(
+                                self,
+                                "Simulation Warning",
+                                result[1]
+                            )
+                            return False
+                        
+                        # Save the simulation data to disk
+                        save_result = self.suite.save_simulation(updated_simulation)
+                        if isinstance(save_result, tuple) and save_result[0] is False:
+                            QMessageBox.warning(
+                                self,
+                                "Simulation Warning",
+                                save_result[1]
+                            )
+                            return False
+                        sim_path = save_result
+                    except ValueError as e:
+                        # This happens if an identical simulation already exists
+                        QMessageBox.critical(
+                            self,
+                            "Simulation Error",
+                            f"Could not create updated simulation: {str(e)}\n\n"
+                            f"A simulation with identical parameters may already exist."
+                        )
+                        return False
+                    
+                    # Set flag to avoid double-save prompt
+                    self.just_saved = True
+                    
+                    QMessageBox.information(
+                        self,
+                        "Simulation Updated",
+                        f"Simulation updated successfully as '{updated_simulation.display_name}'."
+                    )
+                    
+                    # Emit signal that a simulation was updated
+                    self.simulation_saved.emit(updated_simulation)
+                    
+                    # Close the window
+                    self.close()
+                    return True
+                else:
+                    # For unrun simulations, directly update the existing simulation
+                    
+                    # Update the simulation with new values
+                    # First update the display name
+                    self.simulation.display_name = simulation_data.get('display_name', self.simulation.display_name)
+                    
+                    # Debug information about original simulation
+                    debug_print("ORIGINAL SIMULATION BEFORE EDITING:")
+                    debug_print(f"Species: {list(self.simulation.species.keys())}")
+                    debug_print(f"Channels: {list(self.simulation.channels.keys())}")
+                    debug_print(f"All_species length: {len(self.simulation.all_species)}")
+                    
+                    # Update time step and total time
+                    self.simulation.time_step = simulation_data.get('time_step', self.simulation.time_step)
+                    self.simulation.total_time = simulation_data.get('total_time', self.simulation.total_time)
+                    
+                    # Recalculate iter_num based on updated time_step and total_time
+                    self.simulation.iter_num = int(self.simulation.total_time / self.simulation.time_step)
+                    
+                    # Recalculate save_interval if needed
+                    from ..backend.simulation import MAX_HISTORY_SAVE_POINTS
+                    if self.simulation.iter_num <= MAX_HISTORY_SAVE_POINTS:
+                        self.simulation.save_interval = 1
+                    else:
+                        self.simulation.save_interval = self.simulation.iter_num // MAX_HISTORY_SAVE_POINTS
+                        if self.simulation.save_interval < 1:
+                            self.simulation.save_interval = 1
+                    
+                    # Reset current iteration counter
+                    self.simulation.current_iteration = 0
+                    
+                    # Update buffer capacity
+                    self.simulation.init_buffer_capacity = simulation_data.get('init_buffer_capacity', self.simulation.init_buffer_capacity)
+                    
+                    # Update vesicle parameters
+                    if 'vesicle_params' in simulation_data:
+                        self.simulation.vesicle_params = simulation_data['vesicle_params']
+                    
+                    # Update exterior parameters
+                    if 'exterior_params' in simulation_data:
+                        self.simulation.exterior_params = simulation_data['exterior_params']
+                    
+                    # Get the current species and channels
+                    original_species = {name: species for name, species in self.simulation.species.items()}
+                    original_channels = {name: channel for name, channel in self.simulation.channels.items()}
+                    
+                    # Update species (more complex as we need to preserve objects)
+                    if 'species' in simulation_data:
+                        # Clear existing species
+                        self.simulation.species = {}
+                        self.simulation.all_species = []
+                        
+                        # Create new species from the data
+                        for name, species_data in simulation_data['species'].items():
+                            # Check if species_data is a dictionary or an IonSpecies object
+                            if isinstance(species_data, dict):
+                                from ..backend.ion_species import IonSpecies
+                                species_params = {
+                                    'init_vesicle_conc': species_data.get('init_vesicle_conc', 0.0),
+                                    'exterior_conc': species_data.get('exterior_conc', 0.0),
+                                    'elementary_charge': species_data.get('elementary_charge', 0)
+                                }
+                                species = IonSpecies(display_name=name, **species_params)
+                                self.simulation.species[name] = species
+                                # Use add_ion_species which properly adds to all_species and registers in histories
+                                try:
+                                    self.simulation.add_ion_species(species)
+                                except RuntimeError as e:
+                                    debug_print(f"Warning: {str(e)}, adding to all_species directly")
+                                    # If registration fails, just add to all_species without registering
+                                    if species not in self.simulation.all_species:
+                                        self.simulation.all_species.append(species)
+                            elif hasattr(species_data, 'init_vesicle_conc') and hasattr(species_data, 'exterior_conc'):
+                                # It's already an IonSpecies object
+                                self.simulation.species[name] = species_data
+                                try:
+                                    self.simulation.add_ion_species(species_data)
+                                except RuntimeError as e:
+                                    debug_print(f"Warning: {str(e)}, adding to all_species directly")
+                                    # If registration fails, just add to all_species without registering
+                                    if species_data not in self.simulation.all_species:
+                                        self.simulation.all_species.append(species_data)
+                            elif name in original_species:
+                                # Use the original species if available
+                                self.simulation.species[name] = original_species[name]
+                                try:
+                                    self.simulation.add_ion_species(original_species[name])
+                                except RuntimeError as e:
+                                    debug_print(f"Warning: {str(e)}, adding to all_species directly")
+                                    # If registration fails, just add to all_species without registering
+                                    if original_species[name] not in self.simulation.all_species:
+                                        self.simulation.all_species.append(original_species[name])
+                            else:
+                                debug_print(f"Warning: Invalid species data format for {name}, skipping")
+                    else:
+                        # No species in simulation_data, reuse original species
+                        self.simulation.species = {}
+                        self.simulation.all_species = []
+                        # Don't try to add original species here, it might have been registered already
+                        for name, species in original_species.items():
+                            # Just store in the species dictionary without registering in histories
+                            self.simulation.species[name] = species
+                            self.simulation.all_species.append(species)
+                    
+                    # Update channels and links
+                    if 'channels' in simulation_data:
+                        # Clear existing channels
+                        self.simulation.channels = {}
+                        
+                        # Create new channels from the data
+                        for name, channel_data in simulation_data['channels'].items():
+                            # Check if channel_data is a dictionary or an IonChannel object
+                            if isinstance(channel_data, dict):
+                                channel_type = channel_data.get('channel_type', 'hodgkin-huxley')
+                                primaries = channel_data.get('primary_species', [])
+                                secondaries = channel_data.get('secondary_species', [])
+                                
+                                channel_params = {
+                                    'conductance': channel_data.get('conductance', 0.0),
+                                    'channel_type': channel_type,
+                                    'voltage_multiplier': channel_data.get('voltage_multiplier', 1.0),
+                                    'current_multiplier': channel_data.get('current_multiplier', 1.0)
+                                }
+                                
+                                if channel_type == 'transporter':
+                                    channel_params['stoichiometry'] = channel_data.get('stoichiometry', {})
+                                    channel_params['rate_constant'] = channel_data.get('rate_constant', 0.0)
+                                    
+                                from ..backend.ion_channels import IonChannel
+                                channel = IonChannel(display_name=name, **channel_params)
+                                self.simulation.channels[name] = channel
+                                
+                                # Use add_channel which properly adds to channels dictionary
+                                try:
+                                    # Don't use add_channel which requires primary_species
+                                    # Instead, add directly to channels dictionary
+                                    self.simulation.channels[name] = channel
+                                except RuntimeError as e:
+                                    debug_print(f"Warning: {str(e)}, adding to channels directly")
+                                    # If registration fails, just add to channels dictionary
+                                    self.simulation.channels[name] = channel
+                                
+                            elif hasattr(channel_data, 'conductance') and hasattr(channel_data, 'channel_type'):
+                                # It's already an IonChannel object
+                                self.simulation.channels[name] = channel_data
+                                try:
+                                    # Don't use add_channel which requires primary_species
+                                    # We already added to channels dictionary above
+                                    pass
+                                except RuntimeError as e:
+                                    debug_print(f"Warning: {str(e)}, adding to channels directly")
+                                        
+                            elif name in original_channels:
+                                # Use the original channel if available
+                                self.simulation.channels[name] = original_channels[name]
+                                try:
+                                    # Don't use add_channel which requires primary_species
+                                    # We already added to channels dictionary above
+                                    pass
+                                except RuntimeError as e:
+                                    debug_print(f"Warning: {str(e)}, adding to channels directly")
+                    else:
+                        # No channels in simulation_data, reuse original channels
+                        self.simulation.channels = original_channels
+                    
+                    # Update ion-channel links
+                    if 'ion_channel_links' in simulation_data:
+                        # Create a new IonChannelsLink object
+                        from ..backend.ion_and_channels_link import IonChannelsLink
+                        
+                        # Store the existing links if available
+                        original_ion_channel_links = None
+                        if hasattr(self.simulation, 'ion_channel_links') and self.simulation.ion_channel_links:
+                            original_ion_channel_links = self.simulation.ion_channel_links
+                        
+                        # Create a new IonChannelsLink with use_defaults=False to start with an empty links dict
+                        ion_channel_links = IonChannelsLink(use_defaults=False)
+                        
+                        # Add links from the data
+                        links_data = simulation_data['ion_channel_links']
+                        
+                        # Handle different data types for ion_channel_links
+                        if isinstance(links_data, dict):
+                            for primary_ion, links in links_data.items():
+                                if isinstance(links, list):
+                                    for link in links:
+                                        if isinstance(link, tuple) and len(link) >= 2:
+                                            channel_name, secondary_ion = link
+                                            ion_channel_links.add_link(primary_ion, channel_name, secondary_ion)
+                                        elif isinstance(link, list) and len(link) >= 2:
+                                            channel_name, secondary_ion = link[0], link[1]
+                                            ion_channel_links.add_link(primary_ion, channel_name, secondary_ion)
+                        elif hasattr(links_data, 'get_links'):
+                            # It's already an IonChannelsLink object
+                            for primary_ion, links in links_data.get_links().items():
+                                for channel_name, secondary_ion in links:
+                                    ion_channel_links.add_link(primary_ion, channel_name, secondary_ion)
+                        elif original_ion_channel_links:
+                            # Use original links if available and links_data is invalid
+                            for primary_ion, links in original_ion_channel_links.get_links().items():
+                                for channel_name, secondary_ion in links:
+                                    ion_channel_links.add_link(primary_ion, channel_name, secondary_ion)
+                        else:
+                            debug_print(f"Warning: Invalid ion_channel_links format, using empty links")
+                        
+                        # Set the new links object - this is a critical part for hash calculation
+                        self.simulation.ion_channel_links = ion_channel_links
+                    elif hasattr(self.simulation, 'ion_channel_links') and self.simulation.ion_channel_links:
+                        # Keep the original links object if no new links provided
+                        pass
+                    else:
+                        # Create a default links object if none exists
+                        from ..backend.ion_and_channels_link import IonChannelsLink
+                        self.simulation.ion_channel_links = IonChannelsLink(use_defaults=True)
+                    
+                    # Store the original simulation info
+                    original_hash = self.simulation.get_hash()
+                    original_index = getattr(self.simulation, 'simulation_index', 1)
+                    original_name = self.simulation.display_name
+                    
+                    # Ensure the simulation name is preserved
+                    if not self.simulation.display_name or self.simulation.display_name == "unknown":
+                        self.simulation.display_name = simulation_data.get('display_name', original_name)
+                    
+                    # Temporarily store the old hash to ensure consistent identity
+                    if hasattr(self.simulation, 'stored_hash') and self.simulation.stored_hash:
+                        old_stored_hash = self.simulation.stored_hash
+                    else:
+                        old_stored_hash = original_hash
+                    
+                    # Remove the simulation from the suite without deleting its files
+                    # This ensures we don't have duplicate entries
+                    if self.simulation in self.suite.simulations:
+                        self.suite.simulations.remove(self.simulation)
+                    
+                    # Instead of re-initializing, create new objects manually
+                    # Create vesicle and exterior without re-registering
+                    from ..backend.vesicle import Vesicle
+                    from ..backend.exterior import Exterior
+                    from ..backend.histories_storage import HistoriesStorage
+                    
+                    # Create completely new histories to avoid any registration conflicts
+                    self.simulation.histories = HistoriesStorage()
+                    self.simulation.histories.histories['simulation_time'] = []
+                    self.simulation.histories.histories['simulation_time'].append(self.simulation.time)
+                    
+                    # Register the simulation itself
+                    self.simulation.histories.register_object(self.simulation)
+                    
+                    # Create new vesicle and exterior
+                    self.simulation.vesicle = Vesicle(display_name="Vesicle", **self.simulation.vesicle_params)
+                    self.simulation.exterior = Exterior(display_name="Exterior", **self.simulation.exterior_params)
+                    
+                    # Register them in histories
+                    self.simulation.histories.register_object(self.simulation.vesicle)
+                    self.simulation.histories.register_object(self.simulation.exterior)
+                    
+                    # Connect species to channels
+                    for species in self.simulation.all_species:
+                        self.simulation.histories.register_object(species)
+                    
+                    # Register all channels
+                    for channel in self.simulation.channels.values():
+                        self.simulation.histories.register_object(channel)
+                    
+                    # Connect ion species with channels
+                    ion_channel_links = self.simulation.ion_channel_links.get_links()
+                    for species_name, links in ion_channel_links.items():
+                        if species_name not in self.simulation.species:
+                            continue
+                        primary_species = self.simulation.species[species_name]
+                        for channel_name, secondary_species_name in links:
+                            if channel_name not in self.simulation.channels:
+                                continue
+                            channel = self.simulation.channels[channel_name]
+                            secondary_species = None
+                            if secondary_species_name and secondary_species_name in self.simulation.species:
+                                secondary_species = self.simulation.species[secondary_species_name]
+                            try:
+                                primary_species.connect_channel(channel=channel, secondary_species=secondary_species)
+                            except Exception as e:
+                                debug_print(f"Error connecting channel: {str(e)}")
+                    
+                    # Force the simulation to have the same index as the original
+                    self.simulation.simulation_index = original_index
+                    
+                    # Restore the stored_hash to maintain identity
+                    self.simulation.stored_hash = old_stored_hash
+                    
+                    # Re-add the simulation to the suite
+                    self.suite.simulations.add(self.simulation)
+                    
+                    # Save the updated simulation
+                    # If the hash changed, remove old files
+                    try:
+                        # Calculate the current hash after all changes
+                        current_hash = self.simulation.config.to_sha256_str()
+                        
+                        if current_hash != old_stored_hash:
+                            # Preserve the original stored hash to maintain identity
+                            debug_print(f"Hash changed from {old_stored_hash} to {current_hash}")
+                            debug_print(f"Using original hash for identity preservation")
+                            
+                            # Use remove_old=True to clean up old files with the original hash
+                            save_result = self.suite.save_simulation(self.simulation, remove_old=True)
+                        else:
+                            # Hash didn't change - just save normally
+                            save_result = self.suite.save_simulation(self.simulation)
+                            
+                        # Check if save_result is an error tuple
+                        if isinstance(save_result, tuple) and save_result[0] is False:
+                            QMessageBox.warning(
+                                self,
+                                "Simulation Warning",
+                                save_result[1]
+                            )
+                            return False
+                    except Exception as e:
+                        debug_print(f"Error saving simulation: {str(e)}")
+                        QMessageBox.warning(
+                            self,
+                            "Simulation Warning",
+                            f"Error saving simulation: {str(e)}"
+                        )
+                        return False
+                    
+                    # Set flag to avoid double-save prompt
+                    self.just_saved = True
+                    
+                    QMessageBox.information(
+                        self,
+                        "Simulation Saved",
+                        f"Simulation '{self.simulation.display_name}' saved successfully."
+                    )
+                    
+                    # Emit signal that the simulation was updated
+                    self.simulation_saved.emit(self.simulation)
+                    
+                    # Close the window
+                    self.close()
+                    return True
         
         except ValueError as e:
             QMessageBox.critical(
@@ -556,6 +872,7 @@ class SimulationWindow(QMainWindow):
                 "Simulation Error",
                 f"Error creating/updating simulation: {str(e)}"
             )
+            return False
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -567,47 +884,45 @@ class SimulationWindow(QMainWindow):
                 import traceback
                 debug_print(f"Error in save_simulation: {str(e)}")
                 debug_print(traceback.format_exc())
+            return False
     
     def confirm_close(self):
-        """Show confirmation dialog before closing if there are unsaved changes"""
-        debug_print("confirm_close called")
-        
-        # Check if there are unsaved changes
-        has_changes = self.is_new or self.has_unsaved_changes()
-        debug_print(f"has_unsaved_changes: {has_changes}, is_new: {self.is_new}")
+        """Confirm whether to close the window if there are unsaved changes"""
+        # If in read-only mode, just close without confirmation
+        if self.read_only:
+            self.skip_close_confirmation = True
+            self.close()
+            return
             
-        if has_changes:
-            message = "Do you want to save this simulation before closing?"
-            if not self.is_new and self.has_unsaved_changes():
-                message = "You have changed simulation parameters. Do you want to save as a new simulation before closing?"
-                
-            debug_print("Showing confirmation dialog")
+        # If this is a newly saved simulation, we don't need to confirm
+        if self.just_saved:
+            self.skip_close_confirmation = True
+            self.close()
+            return
+        
+        # Check for unsaved changes
+        if self.has_unsaved_changes():
             reply = QMessageBox.question(
                 self,
-                "Save Simulation",
-                message,
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save before closing?",
                 QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
                 QMessageBox.Save
             )
             
             if reply == QMessageBox.Save:
-                debug_print("User chose Save")
-                # Set flag to avoid recursion
-                self.just_saved = True
-                self.save_simulation()
-                self.close()
+                # Save and close
+                if self.save_simulation():
+                    self.skip_close_confirmation = True
+                    self.close()
             elif reply == QMessageBox.Discard:
-                debug_print("User chose Discard, setting skip_close_confirmation=True")
-                # Set flag to skip confirmation in closeEvent
+                # Discard changes and close
                 self.skip_close_confirmation = True
                 self.close()
-            else:
-                debug_print("User chose Cancel - not closing window")
-                # If cancel, do nothing
-                return
+            # If reply is Cancel, do nothing
         else:
-            debug_print("No changes to save, closing without confirmation")
-            # No changes to save, just close
+            # No changes, just close
+            self.skip_close_confirmation = True
             self.close()
     
     def closeEvent(self, event):
@@ -854,4 +1169,41 @@ class SimulationWindow(QMainWindow):
             debug_print(f"Error checking for unsaved changes: {str(e)}")
             import traceback
             debug_print(traceback.format_exc())
-            return True 
+            return True
+
+    def set_read_only(self, read_only=True):
+        """Set the window to read-only mode"""
+        self.read_only = read_only
+        
+        if read_only:
+            # Update window title to indicate view-only mode
+            if self.simulation:
+                self.setWindowTitle(f"View Simulation: {self.simulation.display_name}")
+            
+            # Disable name input
+            self.name_input.setReadOnly(True)
+            
+            # Make all tabs read-only
+            self.vesicle_tab.set_read_only(True)
+            self.ion_species_tab.set_read_only(True)
+            self.channels_tab.set_read_only(True)
+            self.simulation_params_tab.set_read_only(True)
+            
+            # Hide or disable the save button
+            self.save_button.setVisible(False)
+        else:
+            # Update window title to indicate edit mode
+            if self.simulation:
+                self.setWindowTitle(f"Edit Simulation: {self.simulation.display_name}")
+            
+            # Enable name input
+            self.name_input.setReadOnly(False)
+            
+            # Make all tabs editable
+            self.vesicle_tab.set_read_only(False)
+            self.ion_species_tab.set_read_only(False)
+            self.channels_tab.set_read_only(False)
+            self.simulation_params_tab.set_read_only(False)
+            
+            # Show the save button
+            self.save_button.setVisible(True) 

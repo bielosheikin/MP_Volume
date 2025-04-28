@@ -128,3 +128,20 @@ class IonSpeciesTab(QWidget):
         
         # Emit signal that species have been updated
         self.ion_species_updated.emit()
+        
+    def set_read_only(self, read_only=True):
+        """Set the tab to read-only mode"""
+        # Make table cells read-only
+        if read_only:
+            self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        else:
+            self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
+        
+        # Hide or disable delete buttons in each row
+        for row in range(self.table.rowCount()):
+            delete_button = self.table.cellWidget(row, 4)
+            if delete_button:
+                delete_button.setVisible(not read_only)
+        
+        # Disable the add button
+        self.add_button.setVisible(not read_only)

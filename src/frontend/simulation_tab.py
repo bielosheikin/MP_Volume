@@ -64,3 +64,13 @@ class SimulationParamsTab(QWidget):
             "time_step": time_step,
             "total_time": total_time
         }
+        
+    def set_read_only(self, read_only=True):
+        """Set the tab to read-only mode"""
+        self.time_step.setReadOnly(read_only)
+        self.time_step.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.time_step.setStyleSheet("background-color: #f0f0f0;" if read_only else "")
+        
+        self.total_time.setReadOnly(read_only)
+        self.total_time.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.total_time.setStyleSheet("background-color: #f0f0f0;" if read_only else "")

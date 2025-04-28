@@ -137,3 +137,24 @@ class IonChannelsLink(Configurable):
             ]
             if not self.links[species_name]:  # Remove empty species entries
                 del self.links[species_name]
+
+    def get_links_copy(self) -> Dict[str, List[Tuple[str, Optional[str]]]]:
+        """
+        Create a deep copy of the links dictionary suitable for creating a new 
+        IonChannelsLink object.
+
+        Returns:
+        -------
+        dict
+            A copy of the links dictionary.
+        """
+        if not self.links:
+            return {}
+            
+        links_copy = {}
+        for species_name, links in self.links.items():
+            links_copy[species_name] = []
+            for channel_name, secondary_species in links:
+                links_copy[species_name].append((channel_name, secondary_species))
+                
+        return links_copy

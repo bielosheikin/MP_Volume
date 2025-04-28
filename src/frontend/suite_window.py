@@ -232,21 +232,30 @@ class SuiteWindow(QMainWindow):
         new_button.clicked.connect(self.create_new_simulation)
         list_header.addWidget(new_button)
         
+        # Create based on button
+        create_based_on_button = QPushButton("Create based on")
+        create_based_on_button.clicked.connect(self.create_based_on_simulation)
+        list_header.addWidget(create_based_on_button)
+        
         list_layout.addLayout(list_header)
         
         # Simulation list
         self.simulation_list = QListWidget()
         self.simulation_list.setSelectionMode(QListWidget.SingleSelection)
-        self.simulation_list.itemDoubleClicked.connect(self.open_selected_simulation)
         list_layout.addWidget(self.simulation_list, 1)  # Make list take up available space
         
         # Action buttons
         buttons_layout = QHBoxLayout()
         
-        # Open button
-        open_button = QPushButton("Open")
-        open_button.clicked.connect(self.open_selected_simulation)
-        buttons_layout.addWidget(open_button)
+        # Edit button (replaces Open button)
+        edit_button = QPushButton("Edit")
+        edit_button.clicked.connect(self.edit_selected_simulation)
+        buttons_layout.addWidget(edit_button)
+        
+        # View button
+        view_button = QPushButton("View")
+        view_button.clicked.connect(self.view_selected_simulation)
+        buttons_layout.addWidget(view_button)
         
         # Run button
         run_button = QPushButton("Run")
@@ -420,132 +429,141 @@ class SuiteWindow(QMainWindow):
         # Store a reference to keep it from being garbage collected
         self.simulation_windows["new_simulation"] = sim_window
     
-    def open_selected_simulation(self):
-        """Open the currently selected simulation for editing"""
-        # Get the selected item
+    def edit_selected_simulation(self):
+        """Edit the currently selected simulation (only if it hasn't been run)"""
         selected_items = self.simulation_list.selectedItems()
         if not selected_items:
             QMessageBox.warning(
                 self,
                 "No Simulation Selected",
-                "Please select a simulation to open."
+                "Please select a simulation to edit."
             )
             return
         
-        # Get the simulation hash from the item
-        sim_hash = selected_items[0].data(Qt.UserRole)
+        simulation_hash = selected_items[0].data(Qt.UserRole)
+        simulation = self.suite.get_simulation(simulation_hash)
         
-        # Find if this simulation is marked as problematic
-        is_problematic = False
-        for sim in self.suite.list_simulations(skip_problematic=False):
-            if sim["hash"] == sim_hash and sim.get("is_problematic", False):
-                is_problematic = True
-                break
-        
-        # If the simulation is problematic, show a warning
-        if is_problematic:
-            reply = QMessageBox.question(
+        if not simulation:
+            QMessageBox.warning(
                 self,
-                "Warning: Problematic Simulation",
-                "This simulation appears to be corrupted or has issues.\n"
-                "Attempting to open it may fail or cause unexpected behavior.\n\n"
-                "Do you want to try to open it anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                "Simulation Not Found",
+                "The selected simulation could not be found."
             )
+            return
             
-            if reply == QMessageBox.No:
-                return
+        # Check if the simulation has already been run
+        if simulation.has_run:
+            QMessageBox.warning(
+                self,
+                "Cannot Edit",
+                "This simulation has already been run and cannot be edited. "
+                "You can view its details or create a new simulation based on it."
+            )
+            return
+            
+        # Open the simulation for editing
+        self.open_simulation_window(simulation, editable=True)
         
-        # Check if we already have this simulation window open
-        if sim_hash in self.simulation_windows and self.simulation_windows[sim_hash].isVisible():
-            # If the window is already open, just bring it to the front
-            self.simulation_windows[sim_hash].raise_()
-            self.simulation_windows[sim_hash].activateWindow()
+    def view_selected_simulation(self):
+        """View the currently selected simulation in read-only mode"""
+        selected_items = self.simulation_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(
+                self,
+                "No Simulation Selected",
+                "Please select a simulation to view."
+            )
             return
         
-        # Load the simulation from the suite
+        simulation_hash = selected_items[0].data(Qt.UserRole)
+        simulation = self.suite.get_simulation(simulation_hash)
+        
+        if not simulation:
+            QMessageBox.warning(
+                self,
+                "Simulation Not Found",
+                "The selected simulation could not be found."
+            )
+            return
+            
+        # Open the simulation in read-only mode
+        self.open_simulation_window(simulation, editable=False)
+        
+    def create_based_on_simulation(self):
+        """Create a new simulation based on an existing one"""
+        selected_items = self.simulation_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(
+                self,
+                "No Simulation Selected",
+                "Please select a simulation to use as a template."
+            )
+            return
+        
+        simulation_hash = selected_items[0].data(Qt.UserRole)
+        base_simulation = self.suite.get_simulation(simulation_hash)
+        
+        if not base_simulation:
+            QMessageBox.warning(
+                self,
+                "Simulation Not Found",
+                "The selected simulation could not be found."
+            )
+            return
+            
+        # Create a new simulation based on the selected one
         try:
-            if app_settings.DEBUG_LOGGING:
-                print(f"Attempting to load simulation with hash {sim_hash}")
-                
-            simulation = self.suite.get_simulation(sim_hash)
+            # Get the configuration from the existing simulation
+            config_copy = base_simulation.get_config_copy()
             
-            if app_settings.DEBUG_LOGGING:
-                if simulation:
-                    print(f"Simulation loaded successfully: {simulation.display_name}")
-                    print(f"Has config attribute: {hasattr(simulation, 'config')}")
-                    if hasattr(simulation, 'config'):
-                        print(f"Config type: {type(simulation.config)}")
-                        print(f"Config has species: {hasattr(simulation.config, 'species')}")
-                        print(f"Config has channels: {hasattr(simulation.config, 'channels')}")
-                else:
-                    print(f"Failed to load simulation with hash {sim_hash}")
+            # Create a new simulation with this configuration
+            new_simulation = self.suite.create_simulation(config=config_copy)
             
-            if not simulation:
-                QMessageBox.critical(
-                    self,
-                    "Error Loading Simulation",
-                    f"Failed to load simulation with hash {sim_hash}"
-                )
-                return
+            # Suggest a new name based on the original
+            new_name = f"{base_simulation.display_name} (copy)"
+            new_simulation.display_name = new_name
             
-            # Check if the simulation has a valid config attribute
-            if not hasattr(simulation, 'config'):
-                error_msg = "The loaded simulation is missing its configuration data. This may be due to a change in how simulations are saved and loaded."
-                QMessageBox.critical(
-                    self,
-                    "Invalid Simulation Data",
-                    error_msg
-                )
-                return
+            # Open the new simulation in edit mode
+            self.open_simulation_window(new_simulation, editable=True)
             
-            # Create and show the simulation window
-            sim_window = SimulationWindow(self.suite, simulation, parent=self)
+            # Refresh the simulations list
+            self.refresh_simulations()
             
-            # Connect the simulation_saved signal to refresh our list
-            sim_window.simulation_saved.connect(self.on_simulation_saved)
-            
-            sim_window.show()
-            
-            # Store a reference to keep it from being garbage collected
-            self.simulation_windows[sim_hash] = sim_window
         except Exception as e:
-            import traceback
-            error_trace = traceback.format_exc()
-            
-            if app_settings.DEBUG_LOGGING:
-                print(f"Error opening simulation: {str(e)}")
-                print(f"Traceback: {error_trace}")
-                
-            # Show error dialog with option to see details
-            reply = QMessageBox.critical(
+            QMessageBox.critical(
                 self,
-                "Error Opening Simulation",
-                f"An error occurred while opening the simulation:\n\n{str(e)}\n\n"
-                f"Would you like to see the detailed error? This may help with debugging.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                "Error",
+                f"Failed to create simulation based on template: {str(e)}"
             )
             
-            if reply == QMessageBox.Yes:
-                # Show detailed error dialog
-                error_dialog = QDialog(self)
-                error_dialog.setWindowTitle("Detailed Error Information")
-                error_dialog.setMinimumSize(800, 400)
-                
-                layout = QVBoxLayout(error_dialog)
-                
-                error_text = QTextEdit()
-                error_text.setReadOnly(True)
-                error_text.setPlainText(f"Error: {str(e)}\n\nTraceback:\n{error_trace}")
-                layout.addWidget(error_text)
-                
-                close_button = QPushButton("Close")
-                close_button.clicked.connect(error_dialog.close)
-                layout.addWidget(close_button)
-                
-                error_dialog.exec_()
+    def open_simulation_window(self, simulation, editable=True):
+        """Open a simulation window with the specified editability"""
+        # Check if we already have a window open for this simulation
+        if simulation.get_hash() in self.simulation_windows and self.simulation_windows[simulation.get_hash()].isVisible():
+            window = self.simulation_windows[simulation.get_hash()]
+            window.raise_()
+            window.activateWindow()
+            return
+            
+        # Create a new simulation window
+        window = SimulationWindow(self.suite, simulation, parent=self)
+        
+        # Set read-only mode if not editable
+        if not editable:
+            window.set_read_only(True)
+            
+        # Connect to simulation_saved signal
+        window.simulation_saved.connect(self.on_simulation_saved)
+        
+        # Show the window
+        window.show()
+        
+        # Store a reference to prevent garbage collection
+        self.simulation_windows[simulation.get_hash()] = window
+        
+    def open_selected_simulation(self):
+        """Legacy method to maintain compatibility - now redirects to view_selected_simulation"""
+        self.view_selected_simulation()
     
     def update_simulation_details(self):
         """Update the details view based on the currently selected simulation"""

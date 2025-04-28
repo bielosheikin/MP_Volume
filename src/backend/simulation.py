@@ -476,7 +476,8 @@ class Simulation(Configurable, Trackable):
             "hash": config_hash,
             "index": self.simulation_index,
             "has_run": self.has_run,
-            "display_name": self.display_name  # Add display_name to metadata
+            "display_name": self.display_name,  # Add display_name to metadata
+            "creation_date": getattr(self, 'creation_date', time.strftime("%Y-%m-%d %H:%M:%S"))  # Use existing creation_date or current time
         }
         
         # Save the configuration in JSON format
@@ -484,6 +485,29 @@ class Simulation(Configurable, Trackable):
             # Get config dictionary and add display_name
             config_dict = self.config.to_dict()
             config_dict["display_name"] = self.display_name  # Add display_name to config dictionary
+            
+            # Ensure species are saved properly
+            if "species" not in config_dict and self.species:
+                config_dict["species"] = {}
+                for name, species in self.species.items():
+                    config_dict["species"][name] = {
+                        "init_vesicle_conc": species.init_vesicle_conc,
+                        "exterior_conc": species.exterior_conc,
+                        "elementary_charge": species.elementary_charge
+                    }
+            
+            # Ensure channels are saved properly
+            if "channels" not in config_dict and self.channels:
+                config_dict["channels"] = {}
+                for name, channel in self.channels.items():
+                    if hasattr(channel, 'config') and hasattr(channel.config, '__dict__'):
+                        config_dict["channels"][name] = channel.config.__dict__.copy()
+            
+            # Ensure ion_channel_links are saved properly
+            if "ion_channel_links" not in config_dict and hasattr(self, 'ion_channel_links'):
+                if hasattr(self.ion_channel_links, 'get_links'):
+                    links = self.ion_channel_links.get_links()
+                    config_dict["ion_channel_links"] = {"links": links}
             
             # Create a dictionary with metadata and simulation config
             config_with_metadata = {
@@ -503,6 +527,30 @@ class Simulation(Configurable, Trackable):
             with open(raw_config_path, 'w') as f:
                 config_dict = self.config.to_dict()
                 config_dict["display_name"] = self.display_name  # Add display_name to raw config
+                
+                # Ensure species are saved properly
+                if "species" not in config_dict and self.species:
+                    config_dict["species"] = {}
+                    for name, species in self.species.items():
+                        config_dict["species"][name] = {
+                            "init_vesicle_conc": species.init_vesicle_conc,
+                            "exterior_conc": species.exterior_conc,
+                            "elementary_charge": species.elementary_charge
+                        }
+                
+                # Ensure channels are saved properly
+                if "channels" not in config_dict and self.channels:
+                    config_dict["channels"] = {}
+                    for name, channel in self.channels.items():
+                        if hasattr(channel, 'config') and hasattr(channel.config, '__dict__'):
+                            config_dict["channels"][name] = channel.config.__dict__.copy()
+                
+                # Ensure ion_channel_links are saved properly
+                if "ion_channel_links" not in config_dict and hasattr(self, 'ion_channel_links'):
+                    if hasattr(self.ion_channel_links, 'get_links'):
+                        links = self.ion_channel_links.get_links()
+                        config_dict["ion_channel_links"] = {"links": links}
+                
                 json.dump(config_dict, f, indent=4, default=str)
                 
         except Exception as e:
@@ -599,7 +647,108 @@ class Simulation(Configurable, Trackable):
         return hash(self.get_hash())
         
     def __eq__(self, other):
-        """Define equality based on simulation hash."""
+        """Check if two simulations have the same configuration"""
         if not isinstance(other, Simulation):
             return False
         return self.get_hash() == other.get_hash()
+
+    def get_config_copy(self):
+        """
+        Create a deep copy of the simulation's configuration for creating a new simulation
+        based on this one.
+        """
+        config = {}
+        
+        # Copy basic simulation parameters
+        config["time_step"] = self.time_step
+        config["total_time"] = self.total_time
+        config["temperature"] = self.temperature
+        config["init_buffer_capacity"] = self.init_buffer_capacity
+        
+        # Copy vesicle parameters
+        config["vesicle_params"] = self.vesicle_params.copy()
+        
+        # Copy exterior parameters
+        config["exterior_params"] = self.exterior_params.copy()
+        
+        # Deep copy species
+        config["species"] = {}
+        for name, species in self.species.items():
+            species_config = {
+                "init_vesicle_conc": species.init_vesicle_conc,
+                "exterior_conc": species.exterior_conc,
+                "elementary_charge": species.elementary_charge
+            }
+            config["species"][name] = species_config
+        
+        # Deep copy channels
+        config["channels"] = {}
+        for name, channel in self.channels.items():
+            # Get complete channel configuration including critical attributes
+            channel_config = {}
+            
+            # Extract attributes from both the channel object and its config
+            if hasattr(channel, "config"):
+                # Get all instance attributes from config
+                if hasattr(channel.config, "__dict__"):
+                    channel_config.update(channel.config.__dict__.copy())
+                
+                # Also get class-level attributes that might not be in __dict__
+                # These are critical for channel functionality
+                for attr in [
+                    "allowed_primary_ion", 
+                    "allowed_secondary_ion",
+                    "channel_type",
+                    "dependence_type",
+                    "voltage_multiplier", 
+                    "nernst_multiplier",
+                    "voltage_shift",
+                    "flux_multiplier",
+                    "primary_exponent",
+                    "secondary_exponent",
+                    "custom_nernst_constant",
+                    "use_free_hydrogen"
+                ]:
+                    if hasattr(channel.config, attr) and attr not in channel_config:
+                        channel_config[attr] = getattr(channel.config, attr)
+            
+            # Also try to get attributes directly from the channel object
+            # This ensures we capture all necessary attributes
+            for attr in [
+                "allowed_primary_ion", 
+                "allowed_secondary_ion",
+                "channel_type",
+                "dependence_type",
+                "voltage_multiplier", 
+                "nernst_multiplier",
+                "voltage_shift",
+                "flux_multiplier",
+                "primary_exponent",
+                "secondary_exponent",
+                "custom_nernst_constant",
+                "use_free_hydrogen"
+            ]:
+                if hasattr(channel, attr) and attr not in channel_config:
+                    channel_config[attr] = getattr(channel, attr)
+            
+            config["channels"][name] = channel_config
+        
+        # Copy ion-channel links
+        if hasattr(self.ion_channel_links, 'get_links_copy'):
+            # If it's an IonChannelsLink object, use the method
+            config["ion_channel_links"] = self.ion_channel_links.get_links_copy()
+        elif hasattr(self.ion_channel_links, 'get_links'):
+            # If it has get_links but not get_links_copy, manually copy the links
+            links = self.ion_channel_links.get_links()
+            links_copy = {}
+            for species_name, links_list in links.items():
+                links_copy[species_name] = []
+                for channel_name, secondary_species in links_list:
+                    links_copy[species_name].append((channel_name, secondary_species))
+            config["ion_channel_links"] = links_copy
+        else:
+            # If it's already a dictionary or another type, use a deep copy
+            import copy
+            config["ion_channel_links"] = copy.deepcopy(self.ion_channel_links)
+        
+        return config

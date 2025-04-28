@@ -6,7 +6,7 @@ This file contains settings that can be modified to control application behavior
 # Debug logging settings
 # When True, detailed debug messages will be printed to the console
 # Set to False for production use or when running many simulations
-DEBUG_LOGGING = False
+DEBUG_LOGGING = True
 
 # Simulation save behavior
 # Simulations are now saved explicitly:

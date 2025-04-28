@@ -122,3 +122,21 @@ class VesicleTab(QWidget):
             self.default_pH.setValue(exterior_params["pH"])
             
         self.update_calculated_pH()
+        
+    def set_read_only(self, read_only=True):
+        """Set the tab to read-only mode"""
+        self.init_radius.setReadOnly(read_only)
+        self.init_radius.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.init_radius.setStyleSheet("background-color: #f0f0f0;" if read_only else "")
+        
+        self.init_voltage.setReadOnly(read_only)
+        self.init_voltage.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.init_voltage.setStyleSheet("background-color: #f0f0f0;" if read_only else "")
+        
+        self.buffer_capacity.setReadOnly(read_only)
+        self.buffer_capacity.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.buffer_capacity.setStyleSheet("background-color: #f0f0f0;" if read_only else "")
+        
+        self.default_pH.setReadOnly(read_only)
+        self.default_pH.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.default_pH.setStyleSheet("background-color: #f0f0f0;" if read_only else "")

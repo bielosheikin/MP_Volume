@@ -290,7 +290,10 @@ class ChannelsTab(QWidget):
         if parameters.get('channel_type') and parameters.get('dependence_type') in ['pH', 'voltage_and_pH']:
             param_display += f", {parameters['channel_type'].upper()}"
         
-        self.table.setItem(row, 4, QTableWidgetItem(param_display))
+        # Create the parameters item and set it as read-only
+        params_item = QTableWidgetItem(param_display)
+        params_item.setFlags(params_item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, 4, params_item)
         
         # Connect primary ion dropdown change to enable/disable edit button
         primary_combo.currentTextChanged.connect(
@@ -664,8 +667,11 @@ class ChannelsTab(QWidget):
             # Add channel type for pH dependencies
             if parameters.get('channel_type') and parameters.get('dependence_type') in ['pH', 'voltage_and_pH']:
                 param_display += f", {parameters['channel_type'].upper()}"
-                
-            self.table.setItem(row, 4, QTableWidgetItem(param_display))
+            
+            # Create the parameters item and set it as read-only    
+            params_item = QTableWidgetItem(param_display)
+            params_item.setFlags(params_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 4, params_item)
         
         # Let the table know data has changed
         self.table.viewport().update()
@@ -726,3 +732,34 @@ class ChannelsTab(QWidget):
         
         # Update the table
         self.table.viewport().update()
+
+    def set_read_only(self, read_only=True):
+        """Set the tab to read-only mode"""
+        # Make all combo boxes read-only
+        for row in range(self.table.rowCount()):
+            # Primary ion combo box
+            primary_combo = self.table.cellWidget(row, 1)
+            if primary_combo:
+                primary_combo.setEnabled(not read_only)
+            
+            # Secondary ion combo box
+            secondary_combo = self.table.cellWidget(row, 2)
+            if secondary_combo:
+                secondary_combo.setEnabled(not read_only)
+            
+            # Edit button
+            edit_cell = self.table.cellWidget(row, 3)
+            if edit_cell:
+                # The edit button is in a layout
+                button_layout = edit_cell.layout()
+                edit_button = button_layout.itemAt(0).widget()
+                if edit_button:
+                    edit_button.setVisible(not read_only)
+                
+                # The delete button is also in the same layout
+                delete_button = button_layout.itemAt(1).widget()
+                if delete_button:
+                    delete_button.setVisible(not read_only)
+        
+        # Disable the add button
+        self.add_button.setVisible(not read_only)
