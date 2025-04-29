@@ -30,6 +30,10 @@ class ChannelsTab(QWidget):
         # Initialize with a clean slate for custom channels
         self.ion_channel_links = IonChannelsLink(use_defaults=False)
 
+        # Store button to row mapping
+        self.edit_buttons = {}
+        self.delete_buttons = {}
+
         layout.addWidget(self.table)
 
         self.add_button = QPushButton("Add Channel")
@@ -249,11 +253,14 @@ class ChannelsTab(QWidget):
         # Create buttons container
         button_widget = QWidget()
         button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setContentsMargins(2, 2, 2, 2)
         
-        # Create edit button - disabled if no primary ion
+        # Create edit button
         edit_button = QPushButton("Edit")
-        edit_button.clicked.connect(lambda checked=False, r=row: self.edit_parameters(r))
+        # Store the button in our dictionary
+        self.edit_buttons[edit_button] = row
+        edit_button.clicked.connect(lambda checked=False, btn=edit_button: 
+            self.edit_parameters(self.edit_buttons[btn]))
         edit_button.setEnabled(bool(primary_ion))  # Only enable if primary ion is set
         if not primary_ion:
             edit_button.setToolTip("Set primary ion species first before editing parameters")
@@ -261,8 +268,10 @@ class ChannelsTab(QWidget):
         
         # Create delete button
         delete_button = QPushButton("Delete")
-        delete_button.clicked.connect(lambda checked=False, button=delete_button: 
-            self.delete_channel(self.table.indexAt(button.parent().pos()).row()))
+        # Store the button in our dictionary
+        self.delete_buttons[delete_button] = row
+        delete_button.clicked.connect(lambda checked=False, btn=delete_button: 
+            self.delete_channel(self.delete_buttons[btn]))
         button_layout.addWidget(delete_button)
         
         button_widget.setLayout(button_layout)
@@ -685,7 +694,28 @@ class ChannelsTab(QWidget):
             print(f"  Channel name: {channel_name}")
             print(f"  Total rows before deletion: {self.table.rowCount()}")
             
+        # Find buttons to remove from our dictionaries
+        buttons_to_remove = []
+        for button, btn_row in self.edit_buttons.items():
+            if btn_row == row:
+                buttons_to_remove.append((button, "edit"))
+                
+        for button, btn_row in self.delete_buttons.items():
+            if btn_row == row:
+                buttons_to_remove.append((button, "delete"))
+        
+        # Remove the row
         self.table.removeRow(row)
+        
+        # Remove buttons from our dictionaries
+        for button, btn_type in buttons_to_remove:
+            if btn_type == "edit":
+                del self.edit_buttons[button]
+            else:
+                del self.delete_buttons[button]
+        
+        # Update row indices for remaining buttons
+        self.update_button_rows(row)
         
         # Remove parameters from dictionary if they exist
         if channel_name in self.channel_parameters:
@@ -694,6 +724,40 @@ class ChannelsTab(QWidget):
         if DEBUG_LOGGING:
             print(f"  Total rows after deletion: {self.table.rowCount()}")
             print(f"  Channel parameters removed: {channel_name in self.channel_parameters}")
+            print(f"  Edit buttons remaining: {len(self.edit_buttons)}")
+            print(f"  Delete buttons remaining: {len(self.delete_buttons)}")
+            
+    def update_button_rows(self, deleted_row):
+        """Update the row indices in the button dictionaries after a row is deleted"""
+        # Create new dictionaries to avoid modifying during iteration
+        updated_edit_buttons = {}
+        updated_delete_buttons = {}
+        
+        # Update edit buttons
+        for button, row in self.edit_buttons.items():
+            if row > deleted_row:
+                # This button's row needs to be decremented
+                updated_edit_buttons[button] = row - 1
+                if DEBUG_LOGGING:
+                    print(f"[DEBUG] Updated edit button row from {row} to {row - 1}")
+            elif row != deleted_row:  # Skip the deleted row's button
+                # Keep this button's row the same
+                updated_edit_buttons[button] = row
+        
+        # Update delete buttons
+        for button, row in self.delete_buttons.items():
+            if row > deleted_row:
+                # This button's row needs to be decremented
+                updated_delete_buttons[button] = row - 1
+                if DEBUG_LOGGING:
+                    print(f"[DEBUG] Updated delete button row from {row} to {row - 1}")
+            elif row != deleted_row:  # Skip the deleted row's button
+                # Keep this button's row the same
+                updated_delete_buttons[button] = row
+        
+        # Replace the old dictionaries with the updated ones
+        self.edit_buttons = updated_edit_buttons
+        self.delete_buttons = updated_delete_buttons
 
     def set_data(self, channels_data, ion_channel_links_data=None):
         """
