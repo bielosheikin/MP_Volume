@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox
 from PyQt5.QtCore import pyqtSignal
 from ..backend.default_ion_species import default_ion_species
+from ..app_settings import DEBUG_LOGGING
 
 class IonSpeciesTab(QWidget):
     ion_species_updated = pyqtSignal()  # Signal to notify when ion species are updated
@@ -15,6 +16,9 @@ class IonSpeciesTab(QWidget):
         
         # Connect cell changed signal
         self.table.itemChanged.connect(self.on_item_changed)
+        
+        # Store button to row mapping
+        self.delete_buttons = {}
 
         for ion_name, ion_data in default_ion_species.items():
             self.add_ion_row(ion_name, ion_data.init_vesicle_conc, ion_data.exterior_conc, ion_data.elementary_charge)
@@ -38,6 +42,8 @@ class IonSpeciesTab(QWidget):
     def add_ion_row(self, name, init_vesicle_conc, exterior_conc, charge):
         row = self.table.rowCount()
         self.table.insertRow(row)
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Adding ion row at index {row} with name {name}")
         self.table.setItem(row, 0, QTableWidgetItem(name))
         
         # Use scientific notation for very small values, 3 decimal places for regular values
@@ -53,11 +59,33 @@ class IonSpeciesTab(QWidget):
             
         self.table.setItem(row, 3, QTableWidgetItem(str(charge)))
         
-        # Add a delete button
+        # Add a delete button with direct row reference
         delete_button = QPushButton("Delete")
-        delete_button.clicked.connect(lambda checked=False, r=row: self.delete_ion_species(r))
+        # Store the button and its row in our dictionary
+        self.delete_buttons[delete_button] = row
+        delete_button.clicked.connect(lambda checked=False, btn=delete_button: 
+                                     self.delete_ion_species(self.delete_buttons[btn]))
         self.table.setCellWidget(row, 4, delete_button)
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Added delete button for row {row}")
 
+    def update_button_rows(self, deleted_row):
+        """Update the row indices in the delete_buttons dictionary after a row is deleted"""
+        # Create a new dictionary to avoid modifying during iteration
+        updated_buttons = {}
+        for button, row in self.delete_buttons.items():
+            if row > deleted_row:
+                # This button's row needs to be decremented
+                updated_buttons[button] = row - 1
+                if DEBUG_LOGGING:
+                    print(f"[DEBUG] Updated button row from {row} to {row - 1}")
+            elif row != deleted_row:  # Skip the deleted row's button
+                # Keep this button's row the same
+                updated_buttons[button] = row
+        
+        # Replace the old dictionary with the updated one
+        self.delete_buttons = updated_buttons
+        
     def add_ion_species(self):
         # Temporarily block signals to avoid multiple emissions
         self.table.blockSignals(True)
@@ -69,7 +97,35 @@ class IonSpeciesTab(QWidget):
         
     def delete_ion_species(self, row):
         """Delete an ion species from the table"""
-        self.table.removeRow(row)
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Attempting to delete ion species at row {row}")
+            print(f"[DEBUG] Current table row count: {self.table.rowCount()}")
+        
+        if 0 <= row < self.table.rowCount():
+            # Find the button to remove from our dictionary
+            button_to_remove = None
+            for button, btn_row in self.delete_buttons.items():
+                if btn_row == row:
+                    button_to_remove = button
+                    break
+            
+            # Remove the row
+            self.table.removeRow(row)
+            
+            # Remove the button from our dictionary
+            if button_to_remove:
+                del self.delete_buttons[button_to_remove]
+            
+            # Update row indices for remaining buttons
+            self.update_button_rows(row)
+            
+            if DEBUG_LOGGING:
+                print(f"[DEBUG] Successfully deleted row {row}")
+                print(f"[DEBUG] New table row count: {self.table.rowCount()}")
+                print(f"[DEBUG] Number of tracked buttons: {len(self.delete_buttons)}")
+        else:
+            if DEBUG_LOGGING:
+                print(f"[DEBUG] Invalid row index {row} for deletion")
         
         # Emit the signal after deleting a row
         self.ion_species_updated.emit()
