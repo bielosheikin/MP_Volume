@@ -261,7 +261,8 @@ class ChannelsTab(QWidget):
         
         # Create delete button
         delete_button = QPushButton("Delete")
-        delete_button.clicked.connect(lambda checked=False, r=row: self.delete_channel(r))
+        delete_button.clicked.connect(lambda checked=False, button=delete_button: 
+            self.delete_channel(self.table.indexAt(button.parent().pos()).row()))
         button_layout.addWidget(delete_button)
         
         button_widget.setLayout(button_layout)
@@ -679,12 +680,21 @@ class ChannelsTab(QWidget):
     def delete_channel(self, row):
         """Delete a channel from the table"""
         channel_name = self.table.item(row, 0).text() if self.table.item(row, 0) else ""
+        if DEBUG_LOGGING:
+            print(f"\nDeleting channel at row {row}:")
+            print(f"  Channel name: {channel_name}")
+            print(f"  Total rows before deletion: {self.table.rowCount()}")
+            
         self.table.removeRow(row)
         
         # Remove parameters from dictionary if they exist
         if channel_name in self.channel_parameters:
             del self.channel_parameters[channel_name]
             
+        if DEBUG_LOGGING:
+            print(f"  Total rows after deletion: {self.table.rowCount()}")
+            print(f"  Channel parameters removed: {channel_name in self.channel_parameters}")
+
     def set_data(self, channels_data, ion_channel_links_data=None):
         """
         Populate the channels table with existing data from a simulation
