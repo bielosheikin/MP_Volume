@@ -14,6 +14,7 @@ import random
 from PyQt5.QtWidgets import QApplication
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.gridspec import GridSpec
 
 from .multi_graph_widget import MultiGraphWidget
 from .. import app_settings
@@ -1210,19 +1211,172 @@ class ResultsTabSuite(QWidget):
         try:
             # Create a PdfPages object
             with PdfPages(file_path) as pdf:
-                # For each graph, generate a figure and save it to the PDF
-                for i, graph in enumerate(self.graph_widget.graphs):
-                    # Only save if the graph has data
-                    if graph.axes.lines:
-                        # Get graph title
+                # Count how many graphs have data
+                graphs_with_data = [graph for graph in self.graph_widget.graphs if graph.axes.lines]
+                total_graphs = len(graphs_with_data)
+                
+                if total_graphs == 0:
+                    debug_print("No graphs with data to export")
+                    return
+                
+                # Determine how many pages we need
+                graphs_per_page = 6  # Maximum graphs per page
+                num_pages = (total_graphs + graphs_per_page - 1) // graphs_per_page
+                
+                debug_print(f"Exporting {total_graphs} graphs to {num_pages} pages")
+                
+                # Process each page
+                for page in range(num_pages):
+                    # Get graphs for this page
+                    start_idx = page * graphs_per_page
+                    end_idx = min(start_idx + graphs_per_page, total_graphs)
+                    page_graphs = graphs_with_data[start_idx:end_idx]
+                    graphs_on_page = len(page_graphs)
+                    
+                    debug_print(f"Page {page+1}: Creating layout for {graphs_on_page} graphs")
+                    
+                    # Create a new figure for this page
+                    if graphs_on_page <= 1:
+                        # Single graph case - use the original aspect ratio
+                        fig = plt.figure(figsize=(10, 7))
+                        # Adjust margins to center the plot nicely on the page
+                        fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.15)
+                        ax = fig.add_subplot(111)
+                        
+                        # Get data from the original graph
+                        graph = page_graphs[0]
                         selected = graph.get_selected_variables()
-                        title = selected.get('title', f"Graph {i+1}")
+                        title = selected.get('title', f"Graph {start_idx+1}")
                         
-                        # Apply tight layout to make sure everything fits
-                        graph.figure.tight_layout()
+                        # Copy lines, labels, and other elements from original
+                        for line in graph.axes.lines:
+                            ax.plot(line.get_xdata(), line.get_ydata(), 
+                                   color=line.get_color(), 
+                                   linestyle=line.get_linestyle(),
+                                   marker=line.get_marker(),
+                                   label=line.get_label())
                         
-                        # Add the figure to the PDF
-                        pdf.savefig(graph.figure, bbox_inches='tight')
+                        ax.set_title(title)
+                        ax.set_xlabel(graph.axes.get_xlabel())
+                        ax.set_ylabel(graph.axes.get_ylabel())
+                        ax.grid(True, linestyle='--', alpha=0.7)
+                        
+                        # Add legend if needed
+                        if graph.axes.get_legend() is not None:
+                            ax.legend(fontsize='small', framealpha=0.9, loc='best')
+                        
+                    elif graphs_on_page == 2:
+                        # 2 graphs - stacked vertically with good aspect ratio
+                        fig = plt.figure(figsize=(10, 11))
+                        
+                        # Use GridSpec for better control over spacing
+                        from matplotlib.gridspec import GridSpec
+                        gs = GridSpec(2, 1, figure=fig, height_ratios=[1, 1], hspace=0.3)
+                        
+                        ax1 = fig.add_subplot(gs[0, 0])
+                        ax2 = fig.add_subplot(gs[1, 0])
+                        
+                        axs = [ax1, ax2]
+                    
+                    elif graphs_on_page <= 4:
+                        # 3-4 graphs - use 2x2 grid with wider aspect ratio
+                        fig = plt.figure(figsize=(12, 9))  # Wider figure to accommodate wider graphs
+                        
+                        # Use GridSpec for better control over spacing
+                        from matplotlib.gridspec import GridSpec
+                        # Make width ratios larger than height ratios for wider graphs
+                        gs = GridSpec(2, 2, figure=fig, 
+                                    height_ratios=[1, 1], 
+                                    width_ratios=[1.5, 1.5],  # Wider graphs
+                                    hspace=0.35, wspace=0.25)  # Adjust spacing
+                        
+                        if graphs_on_page == 3:
+                            # For 3 graphs: Use 3 positions in the 2x2 grid as would be used for 4 graphs
+                            # Top left
+                            ax1 = fig.add_subplot(gs[0, 0])
+                            # Top right
+                            ax2 = fig.add_subplot(gs[0, 1])
+                            # Bottom left
+                            ax3 = fig.add_subplot(gs[1, 0])
+                            # Leave bottom right empty
+                            
+                            axs = [ax1, ax2, ax3]
+                        elif graphs_on_page == 5:
+                            # For 5 graphs: Use 5 positions in the 3x2 grid as would be used for 6 graphs
+                            # Top row - left
+                            ax1 = fig.add_subplot(gs[0, 0])
+                            # Top row - right
+                            ax2 = fig.add_subplot(gs[0, 1])
+                            # Middle row - left
+                            ax3 = fig.add_subplot(gs[1, 0])
+                            # Middle row - right
+                            ax4 = fig.add_subplot(gs[1, 1])
+                            # Bottom row - left
+                            ax5 = fig.add_subplot(gs[2, 0])
+                            # Leave bottom right empty
+                            
+                            axs = [ax1, ax2, ax3, ax4, ax5]
+                        else:  # 4 graphs
+                            # Equal 2x2 grid with wider graphs
+                            ax1 = fig.add_subplot(gs[0, 0])
+                            ax2 = fig.add_subplot(gs[0, 1])
+                            ax3 = fig.add_subplot(gs[1, 0])
+                            ax4 = fig.add_subplot(gs[1, 1])
+                            
+                            axs = [ax1, ax2, ax3, ax4]
+                    
+                    else:
+                        # 5-6 graphs - use 3x2 grid with wider aspect ratio
+                        fig = plt.figure(figsize=(12, 11))  # Wider figure to accommodate wider graphs
+                        
+                        # Use GridSpec for better control over spacing
+                        from matplotlib.gridspec import GridSpec
+                        # Make width ratios larger than height ratios for wider graphs
+                        gs = GridSpec(3, 2, figure=fig, 
+                                    height_ratios=[1, 1, 1], 
+                                    width_ratios=[1.5, 1.5],  # Wider graphs
+                                    hspace=0.35, wspace=0.25)  # Adjust spacing
+                        
+                        # Only handle 6 graphs case here, since 5 graphs is handled in the elif
+                        # Standard 3x2 grid
+                        ax1 = fig.add_subplot(gs[0, 0])
+                        ax2 = fig.add_subplot(gs[0, 1])
+                        ax3 = fig.add_subplot(gs[1, 0])
+                        ax4 = fig.add_subplot(gs[1, 1])
+                        ax5 = fig.add_subplot(gs[2, 0])
+                        ax6 = fig.add_subplot(gs[2, 1])
+                        
+                        axs = [ax1, ax2, ax3, ax4, ax5, ax6]
+                    
+                    # Copy data from original graphs to the new layout
+                    if graphs_on_page > 1:
+                        for i, graph in enumerate(page_graphs):
+                            selected = graph.get_selected_variables()
+                            title = selected.get('title', f"Graph {start_idx+i+1}")
+                            
+                            # Copy lines, labels, and other elements from original
+                            for line in graph.axes.lines:
+                                axs[i].plot(line.get_xdata(), line.get_ydata(), 
+                                          color=line.get_color(), 
+                                          linestyle=line.get_linestyle(),
+                                          marker=line.get_marker(),
+                                          label=line.get_label())
+                            
+                            axs[i].set_title(title)
+                            axs[i].set_xlabel(graph.axes.get_xlabel())
+                            axs[i].set_ylabel(graph.axes.get_ylabel())
+                            axs[i].grid(True, linestyle='--', alpha=0.7)
+                            
+                            # Add legend if needed
+                            if graph.axes.get_legend() is not None:
+                                axs[i].legend(fontsize='small', framealpha=0.9, loc='best')
+                    
+                    # Apply tight_layout with appropriate padding
+                    plt.tight_layout(pad=1.5)
+                    
+                    # Save the figure to PDF
+                    pdf.savefig(fig)
+                    plt.close(fig)
                 
                 # Set PDF metadata
                 d = pdf.infodict()
