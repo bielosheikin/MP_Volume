@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QApplication
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.gridspec import GridSpec
+import math
 
 from .multi_graph_widget import MultiGraphWidget
 from .. import app_settings
@@ -1186,6 +1187,491 @@ class ResultsTabSuite(QWidget):
         # This method exists to maintain consistency with signal connections
         pass
 
+    def _generate_parameter_table_for_pdf(self, sim_hash):
+        """
+        Generate a table of simulation parameters for a specific simulation.
+        
+        Args:
+            sim_hash: The hash of the simulation
+            
+        Returns:
+            A list of section tuples, each containing (section_title, parameter_dict)
+            where parameter_dict is a dictionary of parameter names and values
+        """
+        sim_data = self.simulation_data.get(sim_hash, {})
+        display_name = sim_data.get('display_name', 'Unknown Simulation')
+        
+        # Get simulation directory and config path
+        sim_dir = os.path.join(self.suite.suite_path, sim_hash)
+        config_path = os.path.join(sim_dir, "config.json")
+        
+        # Initialize sections for different parameter types
+        # Skip basic_params as requested by user
+        ion_species_params = {}
+        channel_params = {}
+        channel_dependency_params = {}  # New section for dependency parameters
+        # Skip links_params as requested by user
+        simulation_params = {}
+        
+        # Extract metadata from already loaded data
+        metadata = sim_data.get('metadata', {})
+        
+        # Check if config.json exists and load complete config
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config_json = json.load(f)
+                
+                # Extract main sections
+                metadata = config_json.get('metadata', {})
+                simulation_data = config_json.get('simulation', {})
+                
+                # Basic simulation parameters
+                simulation_params['Time Step'] = f"{simulation_data.get('time_step', 0.001):.4f} s"
+                simulation_params['Total Time'] = f"{simulation_data.get('total_time', 0.0):.1f} s"
+                simulation_params['Temperature'] = f"{simulation_data.get('temperature', 310.0):.1f} K"
+                
+                if 'init_buffer_capacity' in simulation_data:
+                    simulation_params['Buffer Capacity'] = f"{simulation_data.get('init_buffer_capacity', 0)}"
+                
+                # Add vesicle parameters
+                if 'vesicle' in simulation_data:
+                    vesicle_data = simulation_data.get('vesicle', {})
+                    simulation_params['Vesicle Radius'] = f"{vesicle_data.get('radius', 0.0):.2e} m"
+                    simulation_params['Specific Capacitance'] = f"{vesicle_data.get('specific_capacitance', 0.0):.2e} F/m²"
+                    
+                # Extract Ion Species
+                species_data = simulation_data.get('species', {})
+                for species_name, species_info in species_data.items():
+                    if isinstance(species_info, dict):
+                        # Format the species name for display
+                        display_species_name = species_name.upper() if len(species_name) <= 2 else species_name.capitalize()
+                        
+                        # Get concentrations and format them
+                        vesicle_conc = species_info.get('init_vesicle_conc', 0.0)
+                        exterior_conc = species_info.get('exterior_conc', 0.0)
+                        charge = species_info.get('elementary_charge', 0)
+                        
+                        # Special case for hydrogen ions - convert to pH if appropriate
+                        if species_name.lower() == 'h':
+                            if vesicle_conc > 0:
+                                vesicle_ph = -math.log10(vesicle_conc)
+                                ion_species_params[f"{display_species_name}+ Vesicle pH"] = f"{vesicle_ph:.2f}"
+                            if exterior_conc > 0:
+                                exterior_ph = -math.log10(exterior_conc)
+                                ion_species_params[f"{display_species_name}+ Exterior pH"] = f"{exterior_ph:.2f}"
+                        
+                        # Add concentration values in mM for better readability
+                        vesicle_mM = vesicle_conc * 1000 if vesicle_conc else 0
+                        exterior_mM = exterior_conc * 1000 if exterior_conc else 0
+                        
+                        ion_species_params[f"{display_species_name} Vesicle Conc."] = f"{vesicle_mM:.2f} mM"
+                        ion_species_params[f"{display_species_name} Exterior Conc."] = f"{exterior_mM:.2f} mM"
+                        ion_species_params[f"{display_species_name} El. Charge"] = f"{charge:+d}"
+                
+                # Extract Ion Channels
+                channels_data = simulation_data.get('channels', {})
+                for channel_name, channel_info in channels_data.items():
+                    if isinstance(channel_info, dict):
+                        # Format display name
+                        display_channel_name = channel_info.get('display_name', channel_name.upper())
+                        
+                        # Get basic channel properties
+                        conductance = channel_info.get('conductance', 0.0)
+                        channel_type = channel_info.get('channel_type', 'Unknown')
+                        dependence_type = channel_info.get('dependence_type', 'None')
+                        
+                        # Create channel entry
+                        channel_params[f"{display_channel_name} Conductance"] = f"{conductance:.2e} S"
+                        channel_params[f"{display_channel_name} Type"] = f"{channel_type}"
+                        
+                        if dependence_type:
+                            # Add dependency type
+                            channel_params[f"{display_channel_name} Dependence"] = f"{dependence_type}"
+                            
+                            # Add specific dependency parameters to the dependencies section
+                            if 'voltage' in dependence_type:
+                                # Voltage dependence parameters
+                                voltage_exponent = channel_info.get('voltage_exponent')
+                                half_act_voltage = channel_info.get('half_act_voltage')
+                                voltage_multiplier = channel_info.get('voltage_multiplier')
+                                
+                                if voltage_exponent is not None:
+                                    channel_dependency_params[f"{display_channel_name} V Exponent"] = f"{voltage_exponent}"
+                                if half_act_voltage is not None:
+                                    channel_dependency_params[f"{display_channel_name} Half-Act V"] = f"{half_act_voltage:.3f} V"
+                                if voltage_multiplier is not None:
+                                    channel_dependency_params[f"{display_channel_name} V Multiplier"] = f"{voltage_multiplier}"
+                            
+                            if 'pH' in dependence_type:
+                                # pH dependence parameters
+                                pH_exponent = channel_info.get('pH_exponent')
+                                half_act_pH = channel_info.get('half_act_pH')
+                                
+                                if pH_exponent is not None:
+                                    channel_dependency_params[f"{display_channel_name} pH Exponent"] = f"{pH_exponent}"
+                                if half_act_pH is not None:
+                                    channel_dependency_params[f"{display_channel_name} Half-Act pH"] = f"{half_act_pH:.2f}"
+                            
+                            if dependence_type == 'time':
+                                # Time dependence parameters
+                                time_exponent = channel_info.get('time_exponent')
+                                half_act_time = channel_info.get('half_act_time')
+                                
+                                if time_exponent is not None:
+                                    channel_dependency_params[f"{display_channel_name} Time Exponent"] = f"{time_exponent}"
+                                if half_act_time is not None:
+                                    channel_dependency_params[f"{display_channel_name} Half-Act Time"] = f"{half_act_time:.3f} s"
+                        
+                        # Additional channel parameters
+                        nernst_multiplier = channel_info.get('nernst_multiplier')
+                        flux_multiplier = channel_info.get('flux_multiplier')
+                        voltage_shift = channel_info.get('voltage_shift')
+                        
+                        if nernst_multiplier is not None:
+                            channel_params[f"{display_channel_name} Nernst Mult."] = f"{nernst_multiplier}"
+                        if flux_multiplier is not None:
+                            channel_params[f"{display_channel_name} Flux Mult."] = f"{flux_multiplier}"
+                        if voltage_shift is not None and voltage_shift != 0:
+                            channel_dependency_params[f"{display_channel_name} V Shift"] = f"{voltage_shift:.3f} V"
+                        
+                        # Add ion specificity
+                        primary_ion = channel_info.get('allowed_primary_ion', '')
+                        secondary_ion = channel_info.get('allowed_secondary_ion', '')
+                        
+                        if primary_ion:
+                            channel_params[f"{display_channel_name} Primary Ion"] = primary_ion.upper() if len(primary_ion) <= 2 else primary_ion.capitalize()
+                        
+                        if secondary_ion:
+                            channel_params[f"{display_channel_name} Secondary Ion"] = secondary_ion.upper() if len(secondary_ion) <= 2 else secondary_ion.capitalize()
+                        
+                        # Ion exponents if available
+                        primary_exponent = channel_info.get('primary_exponent')
+                        secondary_exponent = channel_info.get('secondary_exponent')
+                        
+                        if primary_exponent is not None and primary_exponent != 1:
+                            channel_params[f"{display_channel_name} Primary Exp."] = f"{primary_exponent}"
+                        if secondary_exponent is not None and secondary_exponent != 1:
+                            channel_params[f"{display_channel_name} Secondary Exp."] = f"{secondary_exponent}"
+                
+                # Skipping Ion-Channel Links section as requested by user
+                
+            except Exception as e:
+                debug_print(f"Error loading config.json for parameter table: {str(e)}")
+                import traceback
+                traceback.print_exc()
+        
+        # Return the organized sections - excluding Basic Information and Ion-Channel Links
+        sections = []
+        
+        if simulation_params:
+            sections.append(("Simulation Parameters", simulation_params))
+            
+        if ion_species_params:
+            sections.append(("Ion Species", ion_species_params))
+            
+        if channel_params:
+            sections.append(("Ion Channels", channel_params))
+            
+        if channel_dependency_params:
+            sections.append(("Channel Dependencies", channel_dependency_params))
+        
+        return display_name, sections
+    
+    def _add_parameter_tables_to_pdf(self, pdf):
+        """
+        Add pages with parameter tables to the PDF.
+        
+        Args:
+            pdf: The PdfPages object to add pages to
+        """
+        # Only include parameters for simulations that have been used in plots
+        sim_hashes = self.selected_simulations
+        
+        if not sim_hashes:
+            return
+        
+        # Process each simulation
+        for i, sim_hash in enumerate(sim_hashes):
+            # Get parameters for this simulation
+            display_name, sections = self._generate_parameter_table_for_pdf(sim_hash)
+            
+            # Count total parameters across all sections
+            total_params = sum(len(params) for _, params in sections)
+            
+            # Also count total rows including section headers
+            total_rows = total_params + len(sections)
+            
+            # Use a more flexible approach to determine when to split pages
+            # For tables with fewer rows, use single page with larger font
+            # For medium-sized tables, use single page with smaller font
+            # For very large tables, split into multiple pages
+            if total_rows <= 30:
+                # Small table - comfortable single page with larger font
+                self._add_single_page_parameters(pdf, display_name, sections)
+            elif total_rows <= 50:
+                # Medium table - still use single page but with smaller font
+                self._add_single_page_parameters(pdf, display_name, sections)
+            else:
+                # Large table - multiple pages needed
+                self._add_multi_page_parameters(pdf, display_name, sections)
+    
+    def _add_single_page_parameters(self, pdf, display_name, sections):
+        """
+        Add a single page with all parameter sections.
+        
+        Args:
+            pdf: The PdfPages object
+            display_name: The name of the simulation
+            sections: List of (section_title, params_dict) tuples
+        """
+        # Create a figure with a bit more height
+        fig = plt.figure(figsize=(8.5, 11))
+        
+        # Add a title for this simulation
+        fig.suptitle(f"Parameters for: {display_name}", fontsize=14, y=0.98)
+        
+        # Create a single axes for all tables - position at top of page
+        # [left, bottom, width, height]
+        ax = fig.add_axes([0.05, 0.02, 0.9, 0.91])  # Extended height to use more page space
+        ax.axis('off')
+        
+        # Combine all sections into a single table with section headers
+        all_rows = []
+        
+        # Process each section
+        for section_idx, (section_title, params) in enumerate(sections):
+            # Add a section header row
+            all_rows.append([section_title, ""])
+            
+            # Add parameter rows for this section
+            for key, value in params.items():
+                all_rows.append([key, str(value)])
+        
+        # Create a single table with all rows
+        table = ax.table(
+            cellText=all_rows,
+            loc='upper center',  # Position at top of available space
+            cellLoc='left',
+            colWidths=[0.4, 0.6]
+        )
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        
+        # Adjust font size based on number of rows to maximize space usage
+        total_rows = len(all_rows)
+        if total_rows > 40:
+            font_size = 8
+        elif total_rows > 30:
+            font_size = 9
+        else:
+            font_size = 10
+            
+        table.set_fontsize(font_size)
+        
+        # Apply styling to header rows
+        row_idx = 0
+        for section_idx, (section_title, params) in enumerate(sections):
+            # Get the table cells for the header row
+            header_cells = [table._cells[(row_idx, 0)], table._cells[(row_idx, 1)]]
+            
+            # Style the header cells
+            for cell in header_cells:
+                cell.set_text_props(weight='bold', color='white')
+                cell.set_facecolor('#4472C4')  # Blue header
+            
+            # Center the title in the first cell
+            header_cells[0].set_text_props(ha='center')
+            
+            # Hide the text in the second cell (for visual merge effect)
+            header_cells[1].set_text_props(alpha=0)
+            
+            # Move to the next rows for this section (1 header + parameter rows)
+            row_idx += len(params) + 1
+        
+        # Save this simulation's page
+        pdf.savefig(fig)
+        plt.close(fig)
+    
+    def _add_multi_page_parameters(self, pdf, display_name, sections):
+        """
+        Add multiple pages for parameter sections when they don't fit on one page.
+        
+        Args:
+            pdf: The PdfPages object
+            display_name: The name of the simulation
+            sections: List of (section_title, params_dict) tuples
+        """
+        # Count total number of rows (all parameters + section headers)
+        total_rows = sum(len(params) + 1 for _, params in sections)
+        
+        # If everything can fit on a single page, don't split
+        # A standard page can typically fit around 50-55 rows comfortably with smaller font
+        if total_rows <= 50:
+            self._add_single_page_parameters(pdf, display_name, sections)
+            return
+        
+        # Maximum rows that can fit on a page - increased from 40 to 50
+        max_rows_per_page = 50
+        
+        # Create a list of all rows that need to be displayed
+        all_rows_data = []
+        section_start_indices = {}  # Track where each section starts
+        section_sizes = {}  # Track size of each section
+        
+        # First, collect all rows data and track section boundaries
+        for section_title, params in sections:
+            # Record the start index of this section
+            section_start_indices[section_title] = len(all_rows_data)
+            section_sizes[section_title] = len(params) + 1  # +1 for header row
+            
+            # Add the section header row
+            all_rows_data.append(("header", section_title, ""))
+            
+            # Add all parameter rows
+            for key, value in params.items():
+                all_rows_data.append(("param", key, value))
+        
+        # Create pages with smarter page breaks
+        page_num = 0
+        idx = 0  # Current position in all_rows_data
+        page_breaks = []  # Store the indices where pages should break
+        
+        # Find optimal page breaks trying to keep sections together when possible
+        while idx < len(all_rows_data):
+            # Default page break if we hit the maximum
+            next_idx = min(idx + max_rows_per_page, len(all_rows_data))
+            
+            # If we're not at the end and this break would split a section,
+            # try to find a better break point
+            if next_idx < len(all_rows_data):
+                # Look backward from the default break to find a section boundary
+                for i in range(next_idx, idx, -1):
+                    # Check if this point is a section start
+                    is_section_start = False
+                    for section, start_idx in section_start_indices.items():
+                        if i == start_idx:
+                            is_section_start = True
+                            break
+                    
+                    if is_section_start:
+                        # Found a section start - break here instead
+                        next_idx = i
+                        break
+                        
+                    # See if this row is a header - if so, we're at the start of a section
+                    if i < len(all_rows_data) and all_rows_data[i][0] == "header":
+                        next_idx = i
+                        break
+                
+                # If we couldn't find a good break point and would split a small section,
+                # check if we can include the whole section instead
+                if all_rows_data[next_idx][0] == "param":
+                    # We're in the middle of a section
+                    # See if the current row is part of a section that started recently
+                    for section, start_idx in section_start_indices.items():
+                        if start_idx < next_idx and next_idx - start_idx < max_rows_per_page // 4:
+                            # Small part of a section would be split - check if we can fit the whole section
+                            section_size = section_sizes.get(section, 0)
+                            
+                            # Find the end of this section
+                            section_end = start_idx + section_size
+                            
+                            # If the section isn't too large, include it all on this page
+                            if section_end - idx <= max_rows_per_page * 1.1:  # Allow 10% overflow
+                                next_idx = section_end
+                                break
+            
+            # Add the page break
+            page_breaks.append(next_idx)
+            idx = next_idx
+        
+        # Insert a page break at the beginning
+        page_breaks.insert(0, 0)
+        
+        # Calculate total pages
+        total_pages = len(page_breaks) - 1
+        
+        # Create pages based on the calculated breaks
+        for page_num in range(total_pages):
+            start_idx = page_breaks[page_num]
+            end_idx = page_breaks[page_num + 1]
+            
+            # Get rows for this page
+            page_rows = all_rows_data[start_idx:end_idx]
+            
+            # Create a figure for this page
+            fig = plt.figure(figsize=(8.5, 11))
+            
+            # Add a title (with page number)
+            title = f"Parameters for: {display_name} (Page {page_num+1}/{total_pages})"
+            fig.suptitle(title, fontsize=14, y=0.98)
+            
+            # Create a single axes for all tables on this page
+            ax = fig.add_axes([0.05, 0.02, 0.9, 0.91])  # Use more page space
+            ax.axis('off')
+            
+            # Prepare data for the table
+            table_data = []
+            section_rows = {}  # Track rows for each section on this page
+            current_section = None
+            
+            # Process rows for this page
+            for row_type, col1, col2 in page_rows:
+                if row_type == "header":
+                    # This is a section header
+                    current_section = col1
+                    # Check if this is a continuation
+                    if start_idx > 0 and section_start_indices.get(current_section, 0) < start_idx:
+                        table_data.append([f"{col1} (continued)", ""])
+                    else:
+                        table_data.append([col1, ""])
+                    
+                    # Initialize section row tracking
+                    section_rows[current_section] = []
+                else:
+                    # This is a parameter row
+                    table_data.append([col1, col2])
+                    
+                    # Track the row for this section
+                    if current_section is not None:
+                        section_rows.setdefault(current_section, []).append(len(table_data) - 1)
+            
+            # Create a single table with all rows
+            table = ax.table(
+                cellText=table_data,
+                loc='upper center',
+                cellLoc='left',
+                colWidths=[0.4, 0.6]
+            )
+            
+            # Style the table
+            table.auto_set_font_size(False)
+            # Use smaller font size for tables with more rows
+            font_size = 7 if len(table_data) > 40 else 8 if len(table_data) > 25 else 9
+            table.set_fontsize(font_size)
+            
+            # Apply styling to section headers
+            for i, (row_type, col1, col2) in enumerate(page_rows):
+                if row_type == "header":
+                    # Style header cells
+                    header_cells = [table._cells[(i, 0)], table._cells[(i, 1)]]
+                    
+                    for cell in header_cells:
+                        cell.set_text_props(weight='bold', color='white')
+                        cell.set_facecolor('#4472C4')  # Blue header
+                    
+                    # Center the title in the first cell
+                    header_cells[0].set_text_props(ha='center')
+                    
+                    # Hide the text in the second cell
+                    header_cells[1].set_text_props(alpha=0)
+            
+            # Save this page
+            pdf.savefig(fig)
+            plt.close(fig)
+
     def save_all_to_pdf(self):
         """Export all graphs to a single PDF file"""
         if not self.graph_widget.graphs:
@@ -1378,14 +1864,17 @@ class ResultsTabSuite(QWidget):
                     pdf.savefig(fig)
                     plt.close(fig)
                 
+                # Add parameter tables after the graphs
+                self._add_parameter_tables_to_pdf(pdf)
+                
                 # Set PDF metadata
                 d = pdf.infodict()
                 d['Title'] = 'Simulation Results'
                 d['Subject'] = 'Graphs from simulation suite'
-                d['Keywords'] = 'matplotlib, simulations, graphs'
+                d['Keywords'] = 'matplotlib, simulations, graphs, parameters'
                 d['Creator'] = 'MP Volume Simulator'
             
-            debug_print(f"All graphs exported to PDF: {file_path}")
+            debug_print(f"All graphs and parameter tables exported to PDF: {file_path}")
                 
         except Exception as e:
             debug_print(f"Error exporting graphs to PDF: {str(e)}")
