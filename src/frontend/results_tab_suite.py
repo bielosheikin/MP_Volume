@@ -97,12 +97,30 @@ class ResultsTabSuite(QWidget):
         plot_all_button.clicked.connect(self.update_graph)
         action_buttons_layout.addWidget(plot_all_button)
         
-        # Export all button
-        export_button = QPushButton("Export All Graphs")
-        export_button.clicked.connect(self.export_all_to_csv)
+        # Export histories button (renamed from Export All Graphs)
+        export_button = QPushButton("Export Histories CSV")
+        export_button.setToolTip("Export all history variables for selected simulations to CSV files")
+        export_button.clicked.connect(self.export_histories_to_csv)
         action_buttons_layout.addWidget(export_button)
         
         selection_layout.addLayout(action_buttons_layout)
+        
+        # Add another row for additional export options
+        export_options_layout = QHBoxLayout()
+        
+        # Export parameters button
+        export_params_button = QPushButton("Export Parameters CSV")
+        export_params_button.setToolTip("Export parameters for all selected simulations to CSV")
+        export_params_button.clicked.connect(self.export_parameters_to_csv)
+        export_options_layout.addWidget(export_params_button)
+        
+        # PDF Export button - moved here for better organization
+        pdf_export_button = QPushButton("Export All to PDF")
+        pdf_export_button.setToolTip("Export graphs and parameters to PDF")
+        pdf_export_button.clicked.connect(self.save_all_to_pdf)
+        export_options_layout.addWidget(pdf_export_button)
+        
+        selection_layout.addLayout(export_options_layout)
         
         # Store mapping between checkboxes and simulation hashes
         self.checkbox_sim_map = {}
@@ -1006,34 +1024,97 @@ class ResultsTabSuite(QWidget):
                     
                     writer.writerow(header)
                     
-                    # Get the data from each line
-                    x_data_list = []
-                    y_data_list = []
-                    max_length = 0
+                    # Use first line's x-data as reference for time points
+                    if not lines:
+                        return
+                        
+                    # Get all the data from each line and determine max simulation duration
+                    line_data = []
+                    sim_durations = []
+                    time_steps = []
                     
                     for line in lines:
-                        # Get the x and y data directly from the plotted line
                         x_data = line.get_xdata()
                         y_data = line.get_ydata()
-                        x_data_list.append(x_data)
-                        y_data_list.append(y_data)
-                        max_length = max(max_length, len(x_data))
-                    
-                    # Use the first line's x-data as the reference
-                    if x_data_list:
-                        reference_x = x_data_list[0]
                         
-                        # Write data rows
-                        for i in range(len(reference_x)):
-                            row = [reference_x[i]]  # Add X value
+                        if len(x_data) > 0:
+                            # Calculate simulation duration
+                            duration = x_data[-1] - x_data[0]
+                            sim_durations.append(duration)
                             
-                            # Add Y values for each plotted line
-                            for y_data in y_data_list:
-                                if i < len(y_data):
-                                    row.append(y_data[i])
-                                else:
+                            # Calculate average time step
+                            if len(x_data) > 1:
+                                avg_step = duration / (len(x_data) - 1)
+                                time_steps.append(avg_step)
+                        
+                        line_data.append((x_data, y_data))
+                    
+                    # Find the longest simulation - it will have the largest time step
+                    if not sim_durations:
+                        debug_print("No valid simulation data found")
+                        return
+                        
+                    longest_sim_idx = np.argmax(sim_durations)
+                    longest_duration = sim_durations[longest_sim_idx]
+                    
+                    # Use the time step from the longest simulation
+                    if time_steps:
+                        longest_sim_step = time_steps[longest_sim_idx]
+                    else:
+                        longest_sim_step = 0.1  # Default if no step could be determined
+                    
+                    # Get the global start and end times
+                    global_start = float('inf')
+                    global_end = 0
+                    
+                    for x_data, _ in line_data:
+                        if len(x_data) > 0:
+                            global_start = min(global_start, x_data[0])
+                            global_end = max(global_end, x_data[-1])
+                    
+                    # Generate a consistent time series with the longest simulation's step size
+                    if global_start != float('inf'):
+                        # Add a small epsilon to include the end point
+                        uniform_time_points = np.arange(global_start, global_end + longest_sim_step/2, longest_sim_step)
+                        
+                        # Exclude duplicate times from floating point rounding
+                        uniform_time_points = np.unique(np.round(uniform_time_points, 10))
+                        
+                        # For each time point in our uniform grid, get data from all lines
+                        for time_point in uniform_time_points:
+                            row = [time_point]
+                            
+                            for x_data, y_data in line_data:
+                                # Skip if no data or time point outside simulation range
+                                if len(x_data) == 0 or time_point < x_data[0] or time_point > x_data[-1]:
                                     row.append('')
-                            
+                                    continue
+                                
+                                # Find the closest index
+                                idx = np.abs(x_data - time_point).argmin()
+                                
+                                # If we have an exact match (or close enough)
+                                if abs(x_data[idx] - time_point) < longest_sim_step/10:
+                                    row.append(y_data[idx])
+                                else:
+                                    # Need to interpolate
+                                    if idx > 0 and idx < len(x_data) - 1:
+                                        # Find the bracketing indices
+                                        if x_data[idx] > time_point:
+                                            # Point between idx-1 and idx
+                                            idx_low, idx_high = idx-1, idx
+                                        else:
+                                            # Point between idx and idx+1
+                                            idx_low, idx_high = idx, idx+1
+                                            
+                                        # Linear interpolation
+                                        t = (time_point - x_data[idx_low]) / (x_data[idx_high] - x_data[idx_low])
+                                        interp_value = y_data[idx_low] + t * (y_data[idx_high] - y_data[idx_low])
+                                        row.append(interp_value)
+                                    else:
+                                        # Use nearest value if interpolation not possible
+                                        row.append(y_data[idx])
+                                
                             writer.writerow(row)
                 
                 debug_print(f"Data exported to {file_path}")
@@ -1099,61 +1180,118 @@ class ResultsTabSuite(QWidget):
                     
                     # Data header row
                     header = [x_var]
+                    sim_names = []
+                    
                     for sim_hash in self.selected_simulations:
                         if sim_hash in self.simulation_data:
                             sim_name = self.simulation_data[sim_hash]['display_name']
+                            sim_names.append(sim_name)
                             header.append(f"{sim_name} - {y_var}")
                     
                     writer.writerow(header)
                     
-                    # Find the maximum data length and load first simulation's X data
-                    max_length = 0
-                    first_sim = self.selected_simulations[0] if self.selected_simulations else None
-                    x_data = None
+                    # Load x and y data for all simulations
+                    sim_data = []
+                    sim_durations = []
+                    time_steps = []
+                    global_start = float('inf')
+                    global_end = 0
                     
-                    if first_sim in self.simulation_data:
-                        # Lazy load the x data for first simulation - pass None to avoid affecting graphs
-                        x_data = self.get_simulation_variable(first_sim, x_var, current_graph=None)
-                        if x_data is not None:
-                            max_length = len(x_data)
-                    
-                    # Load y values for all simulations (only once)
-                    y_values = []
                     for sim_hash in self.selected_simulations:
-                        if sim_hash in self.simulation_data:
-                            # Lazy load y data - pass None to avoid affecting graphs
-                            y_data = self.get_simulation_variable(sim_hash, y_var, current_graph=None)
-                            if y_data is not None:
-                                y_values.append(y_data)
-                                max_length = max(max_length, len(y_data))
-                            else:
-                                y_values.append(None)
-                        else:
-                            y_values.append(None)
+                        if sim_hash not in self.simulation_data:
+                            continue
+                            
+                        # Lazy load the data for this simulation
+                        x_data = self.get_simulation_variable(sim_hash, x_var, current_graph=None)
+                        y_data = self.get_simulation_variable(sim_hash, y_var, current_graph=None)
+                        
+                        if x_data is not None and y_data is not None and len(x_data) > 0:
+                            # Only keep data where both x and y are valid
+                            min_length = min(len(x_data), len(y_data))
+                            x_data = x_data[:min_length]
+                            y_data = y_data[:min_length]
+                            
+                            # Calculate simulation duration
+                            duration = x_data[-1] - x_data[0]
+                            sim_durations.append(duration)
+                            
+                            # Calculate average time step
+                            if len(x_data) > 1:
+                                avg_step = duration / (len(x_data) - 1)
+                                time_steps.append(avg_step)
+                            
+                            # Update global range
+                            global_start = min(global_start, x_data[0])
+                            global_end = max(global_end, x_data[-1])
+                            
+                            # Store the data
+                            sim_data.append((sim_hash, x_data, y_data))
                     
-                    # Write data rows
-                    for i in range(max_length):
-                        row = []
+                    # Find the longest simulation - it will have the largest time step
+                    if not sim_durations:
+                        debug_print("No valid simulation data found")
+                        continue
                         
-                        # First add the X value
-                        if x_data is not None and i < len(x_data):
-                            row.append(x_data[i])
-                        else:
-                            row.append('')
+                    longest_sim_idx = np.argmax(sim_durations)
+                    longest_duration = sim_durations[longest_sim_idx]
+                    
+                    # Use the time step from the longest simulation
+                    if time_steps:
+                        longest_sim_step = time_steps[longest_sim_idx]
+                    else:
+                        longest_sim_step = 0.1  # Default if no step could be determined
+                    
+                    # Generate a consistent timeline using the longest simulation's step size
+                    if global_start != float('inf'):
+                        # Create time points using the longest simulation's time step
+                        uniform_time_points = np.arange(global_start, global_end + longest_sim_step/2, longest_sim_step)
                         
-                        # Add Y values for each simulation
-                        for j, y_data in enumerate(y_values):
-                            if y_data is not None and i < len(y_data):
-                                row.append(y_data[i])
-                            else:
-                                row.append('')
+                        # Remove any duplicate times from floating point rounding
+                        uniform_time_points = np.unique(np.round(uniform_time_points, 10))
                         
-                        writer.writerow(row)
+                        # For each time point in our uniform grid, get data from all simulations
+                        for time_point in uniform_time_points:
+                            row = [time_point]  # First add the X value
+                            
+                            for sim_hash, x_data, y_data in sim_data:
+                                # Skip if time point outside simulation range
+                                if time_point < x_data[0] or time_point > x_data[-1]:
+                                    row.append('')
+                                    continue
+                                
+                                # Find the closest index
+                                idx = np.abs(x_data - time_point).argmin()
+                                
+                                # If we have an exact match (or close enough)
+                                if abs(x_data[idx] - time_point) < longest_sim_step/10:
+                                    row.append(y_data[idx])
+                                else:
+                                    # Need to interpolate
+                                    if idx > 0 and idx < len(x_data) - 1:
+                                        # Find the bracketing indices
+                                        if x_data[idx] > time_point:
+                                            # Point between idx-1 and idx
+                                            idx_low, idx_high = idx-1, idx
+                                        else:
+                                            # Point between idx and idx+1
+                                            idx_low, idx_high = idx, idx+1
+                                            
+                                        # Linear interpolation
+                                        t = (time_point - x_data[idx_low]) / (x_data[idx_high] - x_data[idx_low])
+                                        interp_value = y_data[idx_low] + t * (y_data[idx_high] - y_data[idx_low])
+                                        row.append(interp_value)
+                                    else:
+                                        # Use nearest value if interpolation not possible
+                                        row.append(y_data[idx])
+                            
+                            writer.writerow(row)
             
             debug_print(f"All graph data exported to {export_dir}")
                 
         except Exception as e:
             debug_print(f"Error exporting data: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def refresh_simulations(self):
         """Refresh the simulations data when simulations are added/removed"""
@@ -1880,3 +2018,324 @@ class ResultsTabSuite(QWidget):
             debug_print(f"Error exporting graphs to PDF: {str(e)}")
             import traceback
             traceback.print_exc() 
+
+    def export_parameters_to_csv(self):
+        """Export parameters for all selected simulations to a CSV file"""
+        if not self.selected_simulations:
+            debug_print("No simulations selected to export parameters")
+            return
+        
+        # Ask user for a file to save
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Parameters to CSV",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            # User canceled
+            return
+            
+        # Ensure the filename has .csv extension
+        if not file_path.lower().endswith('.csv'):
+            file_path += '.csv'
+        
+        try:
+            # Get all selected simulations and their parameters
+            all_simulations = []
+            simulation_names = []
+            all_parameters = {}  # {section: {param_name: {sim_name: value}}}
+            
+            # First pass: gather all parameters from all simulations
+            for sim_hash in self.selected_simulations:
+                # Get parameters for this simulation
+                display_name, sections = self._generate_parameter_table_for_pdf(sim_hash)
+                all_simulations.append((sim_hash, display_name, sections))
+                simulation_names.append(display_name)
+                
+                # Add all parameters to our data structure
+                for section_title, params in sections:
+                    if section_title not in all_parameters:
+                        all_parameters[section_title] = {}
+                    
+                    for param_name, param_value in params.items():
+                        if param_name not in all_parameters[section_title]:
+                            all_parameters[section_title][param_name] = {}
+                        
+                        all_parameters[section_title][param_name][display_name] = param_value
+            
+            # Open file and write CSV
+            with open(file_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header row with simulation names
+                header_row = ["Section", "Parameter"]
+                header_row.extend(simulation_names)
+                writer.writerow(header_row)
+                
+                # Write parameters by section
+                for section_title in all_parameters:
+                    # Write section header row
+                    writer.writerow([section_title, ""])
+                    
+                    # Write each parameter in this section
+                    for param_name in all_parameters[section_title]:
+                        row = ["", param_name]
+                        
+                        # Add value for each simulation
+                        for sim_name in simulation_names:
+                            if sim_name in all_parameters[section_title][param_name]:
+                                row.append(all_parameters[section_title][param_name][sim_name])
+                            else:
+                                row.append("")
+                        
+                        writer.writerow(row)
+                    
+                    # Add blank row after section
+                    writer.writerow([])
+            
+            debug_print(f"Parameters exported to {file_path}")
+            
+        except Exception as e:
+            debug_print(f"Error exporting parameters: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def export_histories_to_csv(self):
+        """Export all history variables for selected simulations to CSV files"""
+        if not self.selected_simulations:
+            debug_print("No simulations selected to export histories")
+            return
+        
+        # Ask user for a directory
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Directory to Save History Data",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if not dir_path:
+            # User canceled
+            return
+        
+        # Create a subdirectory with timestamp
+        import time
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        export_dir = os.path.join(dir_path, f"histories_export_{timestamp}")
+        
+        try:
+            os.makedirs(export_dir, exist_ok=True)
+            
+            # Create a progress dialog
+            total_progress = 0
+            for sim_hash in self.selected_simulations:
+                if sim_hash in self.simulation_data:
+                    total_progress += len(self.simulation_data[sim_hash].get('available_histories', []))
+            
+            if total_progress == 0:
+                debug_print("No history variables found to export")
+                return
+            
+            progress = QProgressDialog("Exporting history variables...", "Cancel", 0, total_progress, self)
+            progress.setWindowTitle("Exporting Histories")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()  # Ensure dialog is shown
+            
+            # Get time step from the longest simulation for consistent sampling
+            sim_durations = []
+            time_steps = []
+            metadata_by_sim = {}
+            sim_names = []
+            
+            for sim_hash in self.selected_simulations:
+                if sim_hash not in self.simulation_data:
+                    continue
+                    
+                sim_data = self.simulation_data[sim_hash]
+                display_name = sim_data.get('display_name', f"Sim_{sim_hash[:8]}")
+                sim_names.append(display_name)
+                
+                # Get simulation metadata
+                metadata = sim_data.get('metadata', {})
+                metadata_by_sim[sim_hash] = metadata
+                
+                # Calculate simulation duration
+                total_time = metadata.get('total_time', 0.0)
+                time_step = metadata.get('time_step', 0.001)
+                count = metadata.get('count', 0)
+                
+                if count > 0 and total_time > 0:
+                    sim_durations.append(total_time)
+                    time_steps.append(time_step)
+            
+            # Find the longest simulation - use its time step
+            longest_sim_step = 0.001  # Default
+            if sim_durations:
+                longest_sim_idx = np.argmax(sim_durations)
+                longest_duration = sim_durations[longest_sim_idx]
+                if time_steps:
+                    longest_sim_step = time_steps[longest_sim_idx]
+            
+            # Create a metadata file with info about the exports
+            metadata_path = os.path.join(export_dir, "export_info.txt")
+            with open(metadata_path, 'w') as meta_file:
+                meta_file.write(f"History Data Export\n")
+                meta_file.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                meta_file.write(f"Simulations included in this export:\n")
+                
+                for i, sim_hash in enumerate(self.selected_simulations):
+                    if sim_hash in self.simulation_data:
+                        sim_data = self.simulation_data[sim_hash]
+                        display_name = sim_data.get('display_name', f"Sim_{sim_hash[:8]}")
+                        metadata = metadata_by_sim.get(sim_hash, {})
+                        total_time = metadata.get('total_time', 0.0)
+                        time_step = metadata.get('time_step', 0.001)
+                        
+                        meta_file.write(f"{i+1}. {display_name}\n")
+                        meta_file.write(f"   - Duration: {total_time:.2f} seconds\n")
+                        meta_file.write(f"   - Time Step: {time_step:.6f} seconds\n")
+                        
+                        # Add extra metadata
+                        if 'temperature' in metadata:
+                            meta_file.write(f"   - Temperature: {metadata['temperature']:.2f} K\n")
+                        if 'has_run' in metadata:
+                            meta_file.write(f"   - Run Status: {'Completed' if metadata['has_run'] else 'Not Run'}\n")
+                
+                meta_file.write("\nExport Settings:\n")
+                meta_file.write(f"- Time step used for exports: {longest_sim_step:.6f} seconds\n")
+                meta_file.write(f"- Simulations with different durations will have empty values beyond their duration\n")
+            
+            # Get a list of all available history variables across all simulations
+            all_variables = set()
+            for sim_hash in self.selected_simulations:
+                if sim_hash in self.simulation_data:
+                    all_variables.update(self.simulation_data[sim_hash].get('available_histories', []))
+            
+            # Sort variables for consistent order
+            all_variables = sorted(all_variables)
+            
+            # Export each variable to a separate CSV file
+            progress_count = 0
+            for var_name in all_variables:
+                # Skip if user canceled
+                if progress.wasCanceled():
+                    break
+                
+                # Update progress dialog
+                progress.setLabelText(f"Exporting {var_name}...")
+                progress.setValue(progress_count)
+                QApplication.processEvents()  # Keep UI responsive
+                progress_count += 1
+                
+                # Generate a safe filename
+                safe_var_name = "".join(c if c.isalnum() else "_" for c in var_name)
+                file_path = os.path.join(export_dir, f"{safe_var_name}.csv")
+                
+                # Load data for this variable from all simulations
+                sim_data_for_var = []
+                global_start = float('inf')
+                global_end = 0
+                
+                for sim_hash in self.selected_simulations:
+                    if sim_hash not in self.simulation_data:
+                        continue
+                    
+                    # Check if this simulation has this variable
+                    sim_data = self.simulation_data[sim_hash]
+                    if var_name not in sim_data.get('available_histories', []):
+                        continue
+                    
+                    # Load x_data (time) and y_data (variable values)
+                    x_data = self.get_simulation_variable(sim_hash, 'time', current_graph=None)
+                    y_data = self.get_simulation_variable(sim_hash, var_name, current_graph=None)
+                    
+                    if x_data is not None and y_data is not None and len(x_data) > 0 and len(y_data) > 0:
+                        # Only keep valid data points
+                        min_length = min(len(x_data), len(y_data))
+                        x_data = x_data[:min_length]
+                        y_data = y_data[:min_length]
+                        
+                        # Update global range
+                        if len(x_data) > 0:
+                            global_start = min(global_start, x_data[0])
+                            global_end = max(global_end, x_data[-1])
+                        
+                        # Store the data
+                        sim_data_for_var.append((sim_hash, x_data, y_data))
+                
+                # Skip if no data for this variable
+                if not sim_data_for_var or global_start == float('inf'):
+                    continue
+                
+                # Write the CSV file
+                with open(file_path, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header row with metadata
+                    writer.writerow([f"Variable: {var_name}"])
+                    writer.writerow([])  # Empty row
+                    
+                    # Data header row
+                    header = ["simulation_time"]
+                    for sim_hash, _, _ in sim_data_for_var:
+                        display_name = self.simulation_data[sim_hash].get('display_name', f"Sim_{sim_hash[:8]}")
+                        header.append(display_name)
+                    
+                    writer.writerow(header)
+                    
+                    # Generate a consistent timeline using the longest simulation's time step
+                    uniform_time_points = np.arange(global_start, global_end + longest_sim_step/2, longest_sim_step)
+                    
+                    # Remove any duplicate times from floating point rounding
+                    uniform_time_points = np.unique(np.round(uniform_time_points, 10))
+                    
+                    # For each time point in our uniform grid, get data from all simulations
+                    for time_point in uniform_time_points:
+                        row = [time_point]  # First add the time value
+                        
+                        for sim_hash, x_data, y_data in sim_data_for_var:
+                            # Skip if time point outside simulation range
+                            if time_point < x_data[0] or time_point > x_data[-1]:
+                                row.append('')
+                                continue
+                            
+                            # Find the closest index
+                            idx = np.abs(x_data - time_point).argmin()
+                            
+                            # If we have an exact match (or close enough)
+                            if abs(x_data[idx] - time_point) < longest_sim_step/10:
+                                row.append(y_data[idx])
+                            else:
+                                # Need to interpolate
+                                if idx > 0 and idx < len(x_data) - 1:
+                                    # Find the bracketing indices
+                                    if x_data[idx] > time_point:
+                                        # Point between idx-1 and idx
+                                        idx_low, idx_high = idx-1, idx
+                                    else:
+                                        # Point between idx and idx+1
+                                        idx_low, idx_high = idx, idx+1
+                                        
+                                    # Linear interpolation
+                                    t = (time_point - x_data[idx_low]) / (x_data[idx_high] - x_data[idx_low])
+                                    interp_value = y_data[idx_low] + t * (y_data[idx_high] - y_data[idx_low])
+                                    row.append(interp_value)
+                                else:
+                                    # Use nearest value if interpolation not possible
+                                    row.append(y_data[idx])
+                        
+                        writer.writerow(row)
+            
+            # Ensure progress dialog is closed
+            progress.setValue(total_progress)
+            
+            debug_print(f"All history variables exported to {export_dir}")
+                
+        except Exception as e:
+            debug_print(f"Error exporting histories: {str(e)}")
+            import traceback
+            traceback.print_exc()
