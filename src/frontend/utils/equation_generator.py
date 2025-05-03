@@ -102,8 +102,26 @@ class EquationGenerator:
         html = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;">'
         html += '<tr style="vertical-align:middle;">'
         
-        # First cell - Vnernst = V
-        html += '<td style="padding:2px; text-align:left; white-space:nowrap; vertical-align:middle;">V<sub>nernst</sub> = V</td>'
+        # First cell - Vnernst = 
+        html += '<td style="padding:2px; text-align:left; white-space:nowrap; vertical-align:middle;">V<sub>nernst</sub> = </td>'
+        
+        # Add voltage_multiplier * V term
+        if voltage_multiplier != 0:
+            # Format voltage_multiplier
+            if voltage_multiplier != 1:
+                formatted_voltage_mult = EquationGenerator.format_special_value(abs(voltage_multiplier))
+                # Sign handling
+                if voltage_multiplier < 0:
+                    html += f'<td style="padding:2px; text-align:center; vertical-align:middle;">-{formatted_voltage_mult}</td>'
+                else:
+                    html += f'<td style="padding:2px; text-align:center; vertical-align:middle;">{formatted_voltage_mult}</td>'
+                html += '<td style="padding:2px; text-align:center; vertical-align:middle;">×</td>'
+            
+            # Add V term
+            html += '<td style="padding:2px; text-align:center; vertical-align:middle;">V</td>'
+        else:
+            # If voltage_multiplier is 0, just show 0
+            html += '<td style="padding:2px; text-align:center; vertical-align:middle;">0</td>'
         
         # Nernst Multiplier
         if nernst_multiplier != 0:
