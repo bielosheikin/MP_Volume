@@ -288,20 +288,31 @@ class ResultsTabSuite(QWidget):
             
             # Iterate through simulations and load their data
             first_checkbox = None
-            first_run_checkbox = None
+            
+            # Filter to only include simulations that have been run
+            run_simulations = [sim for sim in simulations if sim.get('has_run', False)]
+            
+            # If no simulations have been run, show a message
+            if not run_simulations:
+                # Add a label to show there are no run simulations
+                no_sims_label = QLabel("No run simulations available. Please run some simulations first.")
+                no_sims_label.setAlignment(Qt.AlignCenter)
+                self.checkboxes_layout.addWidget(no_sims_label)
+                progress.close()
+                return
             
             # Calculate the progress increment per simulation
-            progress_per_sim = 80 / len(simulations)
+            progress_per_sim = 80 / len(run_simulations)
             
             # Process simulations
-            for idx, sim_info in enumerate(simulations):
+            for idx, sim_info in enumerate(run_simulations):
                 # Check for cancellation
                 if progress.wasCanceled():
                     break
                     
                 # Update progress
                 progress.setValue(10 + int(idx * progress_per_sim))
-                progress.setLabelText(f"Loading simulation {idx+1}/{len(simulations)}...")
+                progress.setLabelText(f"Loading simulation {idx+1}/{len(run_simulations)}...")
                 QApplication.processEvents()  # Keep UI responsive
                 
                 display_name = sim_info['display_name']
@@ -309,15 +320,15 @@ class ResultsTabSuite(QWidget):
                 sim_index = sim_info['index']
                 has_run = sim_info.get('has_run', False)
                 
+                # Skip simulations that haven't been run
+                if not has_run:
+                    continue
+                
                 # Load simulation data (just metadata at this point with lazy loading)
                 self.load_simulation_data(sim_hash, display_name, sim_index)
                 
-                # Create checkbox for this simulation, marking sims that have been run
-                if has_run:
-                    checkbox = QCheckBox(f"{display_name} (#{sim_index}) [✓]")
-                else:
-                    checkbox = QCheckBox(f"{display_name} (#{sim_index}) [not run]")
-                
+                # Create checkbox for this simulation
+                checkbox = QCheckBox(f"{display_name} (#{sim_index}) [✓]")
                 checkbox.setChecked(False)  # Uncheck by default
                 
                 # Connect the state changed signal
@@ -332,12 +343,9 @@ class ResultsTabSuite(QWidget):
                 # Store in our mapping
                 self.checkbox_sim_map[sim_hash] = checkbox
                 
-                # Keep track of first checkbox and first run checkbox
+                # Keep track of first checkbox
                 if first_checkbox is None:
                     first_checkbox = checkbox
-                
-                if has_run and first_run_checkbox is None:
-                    first_run_checkbox = checkbox
                 
                 # Process events every few simulations to keep UI responsive
                 if idx % 3 == 0:
@@ -351,18 +359,8 @@ class ResultsTabSuite(QWidget):
             # Populate dropdowns with initial variables - but defer actual loading of data
             self.populate_variable_dropdowns()
             
-            # Select first run simulation by default if available, otherwise first simulation
-            if first_run_checkbox is not None:
-                # Block signals to prevent triggering update_selected_simulations
-                first_run_checkbox.blockSignals(True)
-                first_run_checkbox.setChecked(True)
-                first_run_checkbox.blockSignals(False)
-                
-                # Manually add to selected_simulations without plotting
-                sim_hash = first_run_checkbox.property("sim_hash")
-                if sim_hash:
-                    self.selected_simulations = [sim_hash]
-            elif first_checkbox is not None:
+            # Select first run simulation by default if available
+            if first_checkbox is not None:
                 # Block signals to prevent triggering update_selected_simulations
                 first_checkbox.blockSignals(True)
                 first_checkbox.setChecked(True)
@@ -545,24 +543,11 @@ class ResultsTabSuite(QWidget):
     def update_selected_simulations(self):
         """Update the list of selected simulations based on checkbox states"""
         self.selected_simulations = []
-        has_unrun_sims = False
         
         # Iterate through checkboxes to find selected ones
         for sim_hash, checkbox in self.checkbox_sim_map.items():
             if checkbox.isChecked():
-                # Check if simulation has run before adding it to selected list
-                sim_data = self.simulation_data.get(sim_hash, {})
-                metadata = sim_data.get('metadata', {})
-                has_run = metadata.get('has_run', False)
-                
-                if not has_run:
-                    has_unrun_sims = True
-                    
                 self.selected_simulations.append(sim_hash)
-        
-        # Show a warning if unrun simulations are selected
-        if has_unrun_sims:
-            self.show_unrun_warning()
         
         # Update the variable dropdowns with the selected simulations
         # But don't update graphs automatically - wait for Plot button
@@ -572,17 +557,12 @@ class ResultsTabSuite(QWidget):
         self._update_selection_status()
     
     def show_unrun_warning(self):
-        """Show a warning about plotting unrun simulations"""
-        # Use a smaller, more subtle notification in all graph areas
-        for graph in self.graph_widget.graphs:
-            graph.axes.clear()
-            graph.axes.text(0.5, 0.5, 
-                         "You've selected unrun simulations that have no data.\n"
-                         "These will be automatically deselected when plotting.",
-                         ha='center', va='center', fontsize=10,
-                         bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", ec="orange", alpha=0.9))
-            graph.canvas.draw()
-    
+        """
+        Method kept for compatibility - no longer needed since we only show run simulations.
+        """
+        # No-op now that we filter out unrun simulations
+        pass
+
     def free_unused_data(self, keep_sims=None):
         """Free memory by unloading data for simulations not in the keep_sims list"""
         if keep_sims is None:
@@ -653,32 +633,9 @@ class ResultsTabSuite(QWidget):
                 graph.canvas.draw()
                 return
             
-            # Gather valid simulations - skip this if we know all are valid (performance optimization)
-            valid_simulations = []
-            unrun_simulations = []  # Track unrun simulations to deselect later
-            
-            if app_settings.DEBUG_LOGGING:
-                debug_print("DEBUG: Checking selected simulations:")
-            for sim_hash in self.selected_simulations:
-                if sim_hash in self.simulation_data:
-                    sim_data = self.simulation_data[sim_hash]
-                    if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Checking sim {sim_hash[:8]} - has_run: {sim_data.get('has_run', False)}")
-                    
-                    # Skip unrun simulations (they have no data)
-                    if not sim_data.get('has_run', False):
-                        unrun_simulations.append(sim_hash)
-                        if app_settings.DEBUG_LOGGING:
-                            debug_print(f"DEBUG: Simulation {sim_hash[:8]} has not been run, skipping")
-                        continue
-                        
-                    # Add to the valid simulations list
-                    valid_simulations.append(sim_hash)
-                    if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Added {sim_hash[:8]} to valid simulations")
-                else:
-                    if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Simulation {sim_hash[:8]} not found in simulation_data")
+            # Get list of valid simulations to plot - we know all simulations in the list have been run
+            valid_simulations = [sim_hash for sim_hash in self.selected_simulations 
+                                if sim_hash in self.simulation_data]
             
             if app_settings.DEBUG_LOGGING:
                 debug_print(f"DEBUG: Found {len(valid_simulations)} valid simulations")
@@ -687,7 +644,7 @@ class ResultsTabSuite(QWidget):
             if not valid_simulations:
                 if app_settings.DEBUG_LOGGING:
                     debug_print("DEBUG: No valid simulations to plot")
-                graph.axes.text(0.5, 0.5, "No valid simulations selected.\nMake sure you've selected simulations that have been run.",
+                graph.axes.text(0.5, 0.5, "No valid simulations selected.",
                              ha='center', va='center', fontsize=12)
                 graph.canvas.draw()
                 return
@@ -709,20 +666,6 @@ class ResultsTabSuite(QWidget):
             # Markers for further distinguishing similar plots
             markers = ['', 'o', 's', '^', 'x', 'D', '+']
             
-            # If we found unrun simulations, deselect them
-            if unrun_simulations:
-                for sim_hash in unrun_simulations:
-                    if sim_hash in self.checkbox_sim_map:
-                        # Temporarily disconnect to avoid triggering update_graph again
-                        checkbox = self.checkbox_sim_map[sim_hash]
-                        checkbox.blockSignals(True)
-                        checkbox.setChecked(False)
-                        checkbox.blockSignals(False)
-                        
-                    # Remove from selected_simulations
-                    if sim_hash in self.selected_simulations:
-                        self.selected_simulations.remove(sim_hash)
-                        
             # First pass: load all data
             all_plot_data = []  # Store all plot data to detect similar plots
             
@@ -744,194 +687,147 @@ class ResultsTabSuite(QWidget):
                 x_data = self.get_simulation_variable(sim_hash, x_var, current_graph=graph)
                 y_data = self.get_simulation_variable(sim_hash, y_var, current_graph=graph)
                 
-                # Only proceed if we have both X and Y data
-                if x_data is not None and y_data is not None:
+                # Continue only if we have valid data
+                if x_data is None or y_data is None or len(x_data) == 0 or len(y_data) == 0:
                     if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Data loaded - X: {len(x_data)} points, Y: {len(y_data)} points")
+                        debug_print(f"DEBUG: No valid data for {display_name}, skipping")
+                    continue
+                
+                # Store data for reuse
+                all_plot_data.append((sim_hash, display_name, sim_index, x_data, y_data))
+                
+                # Process events occasionally to keep UI responsive
+                if i % 3 == 0:
+                    QApplication.processEvents()
                     
-                    # Check if data is empty
-                    if len(x_data) == 0 or len(y_data) == 0:
+                    # Check if we need to abort the update
+                    if hasattr(graph, "_abort_update") and graph._abort_update:
                         if app_settings.DEBUG_LOGGING:
-                            debug_print(f"DEBUG: Empty data for {display_name}")
-                        continue
-                    
-                    # Adjust data lengths if they don't match
-                    min_length = min(len(x_data), len(y_data))
-                    if len(x_data) != len(y_data):
-                        x_data = x_data[:min_length]
-                        y_data = y_data[:min_length]
-                        
-                    # Store data for similarity detection
-                    all_plot_data.append({
-                        'sim_hash': sim_hash,
-                        'display_name': display_name,
-                        'sim_index': sim_index,
-                        'x_data': x_data,
-                        'y_data': y_data,
-                        'color_idx': i % len(colors)
-                    })
+                            debug_print("DEBUG: Aborting update due to abort flag")
+                        graph._abort_update = False
+                        return
             
-            # Skip the rest if we have no data
-            if not all_plot_data:
-                graph.axes.text(0.5, 0.5, "No data available for the selected variables",
-                             ha='center', va='center', fontsize=12)
-                graph.canvas.draw()
+            # Free memory by removing unused simulation data
+            self.free_unused_data(keep_sims=self.selected_simulations)
+            
+            # Second pass: find similar plots and adjust visual style
+            # Group similar plots together
+            plot_groups = []
+            used_indices = set()
+            
+            # Second pass: plot the data with appropriate styling
+            for i, (sim_hash, display_name, sim_index, x_data, y_data) in enumerate(all_plot_data):
+                # Skip if we've processed this plot as part of a group
+                if i in used_indices:
+                    continue
+                
+                # Get a color for this plot or group
+                color_idx = len(plot_groups) % len(colors)
+                color = colors[color_idx]
+                
+                # Look for similar plots to group together
+                similar_plots = [(i, sim_hash, display_name, sim_index, x_data, y_data)]
+                
+                # Check remaining plots for similarity
+                for j, (other_hash, other_name, other_index, other_x, other_y) in enumerate(all_plot_data[i+1:], i+1):
+                    # Only group if we have at least 3 points to compare
+                    if len(y_data) >= 3 and len(other_y) >= 3:
+                        # Get the shorter of the two datasets
+                        min_length = min(len(y_data), len(other_y))
+                        
+                        # Ensure x values are comparable (might be different time series)
+                        # For simplicity, just check a few sample points
+                        if self._are_plots_similar(y_data[:min_length], other_y[:min_length]):
+                            similar_plots.append((j, other_hash, other_name, other_index, other_x, other_y))
+                            used_indices.add(j)
+                
+                # Add this group to our plot groups
+                plot_groups.append(similar_plots)
+            
+            # Ensure we have empty axes to plot on
+            if not hasattr(graph, 'axes') or graph.axes is None:
+                if app_settings.DEBUG_LOGGING:
+                    debug_print("DEBUG: Graph axes not available, skipping plot")
                 return
             
-            # Clear THIS graph before plotting - important to do it here after all checks
-            # This ensures we don't clear the graph if there's nothing to plot
-            graph.axes.clear()
-            
-            # Second pass: Detect similar plots and apply different styles
-            similar_groups = []  # Group similar plots
-            
-            # First, identify all similar plots and group them
-            for i in range(len(all_plot_data)):
-                assigned_to_group = False
+            # If we have data, set labels and title
+            if all_plot_data:
+                graph.axes.set_xlabel(x_var)
+                graph.axes.set_ylabel(y_var)
+                graph.axes.set_title(selected['title'])
                 
-                # Check if this plot is similar to any plots in existing groups
-                for group in similar_groups:
-                    reference_idx = group[0]
-                    if self._are_plots_similar(all_plot_data[i]['y_data'], all_plot_data[reference_idx]['y_data']):
-                        group.append(i)
-                        assigned_to_group = True
-                        break
+                # Plot each group with consistent styling
+                line_handles = []
+                line_labels = []
                 
-                if not assigned_to_group:
-                    # Create a new group with this plot as reference
-                    similar_groups.append([i])
-            
-            # Now plot each simulation with appropriate styling
-            legend_entries = []
-            
-            for i, plot_data in enumerate(all_plot_data):
-                sim_hash = plot_data['sim_hash']
-                display_name = plot_data['display_name']
-                sim_index = plot_data['sim_index']
-                x_data = plot_data['x_data']
-                y_data = plot_data['y_data']
-                color_idx = plot_data['color_idx']
-                
-                # Find which group this plot belongs to
-                plot_group = None
-                plot_position_in_group = 0
-                for group in similar_groups:
-                    if i in group:
-                        plot_group = group
-                        plot_position_in_group = group.index(i)
-                        break
-                
-                # Set different styles based on whether this plot is in a group of similar plots
-                is_in_similar_group = plot_group and len(plot_group) > 1
-                
-                # Choose line style - use different styles for plots in the same similarity group
-                if is_in_similar_group:
-                    line_style_idx = plot_position_in_group % len(line_styles)
-                else:
-                    line_style_idx = 0  # Default solid line for unique plots
-                
-                line_style = line_styles[line_style_idx]
-                
-                # Choose marker - use markers for similar plots to make them more distinguishable
-                marker = ''
-                if is_in_similar_group:
-                    marker_idx = plot_position_in_group % len(markers)
-                    marker = markers[marker_idx]
-                
-                # Choose marker every N points to avoid overcrowding
-                marker_every = None
-                if marker:
-                    # Use fewer markers for large datasets
-                    if len(x_data) > 1000:
-                        marker_every = max(20, len(x_data) // 50)
-                    elif len(x_data) > 100:
-                        marker_every = max(5, len(x_data) // 20)
-                
-                # Choose line width - unique plots get slightly thicker lines
-                line_width = 1.75 if not is_in_similar_group else 1.25 + (0.25 * (plot_position_in_group % 3))
-                
-                # Choose alpha transparency - all plots slightly transparent
-                alpha = 0.9
-                
-                try:
-                    # Plot with the chosen style
-                    if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Plotting {display_name} with style: line={line_style}, marker={marker}")
-                    line, = graph.axes.plot(
-                        x_data, 
-                        y_data,
-                        color=colors[color_idx], 
-                        linestyle=line_style,
-                        linewidth=line_width,
-                        alpha=alpha,
-                        marker=marker,
-                        markevery=marker_every,
-                        markersize=5 if marker else 0,
-                        label=f"{display_name} (#{sim_index})"
-                    )
-                    if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Plot successful for {display_name}")
+                for group_idx, group in enumerate(plot_groups):
+                    # Select a color for this group
+                    color = colors[group_idx % len(colors)]
                     
-                    legend_entries.append(line)
-                except Exception as e:
-                    if app_settings.DEBUG_LOGGING:
-                        debug_print(f"DEBUG: Error plotting {display_name}: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
+                    # Plot each entry in this group with variations
+                    for plot_idx, (_, sim_hash, display_name, sim_index, x_data, y_data) in enumerate(group):
+                        # Determine line style and marker
+                        # For single entry groups, use solid line, no marker
+                        if len(group) == 1:
+                            line_style = '-'
+                            marker = ''
+                        else:
+                            # For multi-entry groups, use varied styles
+                            line_style = line_styles[plot_idx % len(line_styles)]
+                            marker = markers[(plot_idx // len(line_styles)) % len(markers)]
+                        
+                        # Create label with simulation name and index
+                        label = f"{display_name} (#{sim_index})"
+                        
+                        # Plot the data
+                        try:
+                            line, = graph.axes.plot(x_data, y_data, label=label, 
+                                                 linestyle=line_style, marker=marker, 
+                                                 markersize=4, markevery=max(1, len(x_data)//20),
+                                                 color=color)
+                            
+                            line_handles.append(line)
+                            line_labels.append(label)
+                        except Exception as e:
+                            debug_print(f"Error plotting {label}: {str(e)}")
+                            continue
+                
+                # Add legend
+                if line_handles:
+                    # Use bbox_to_anchor to position legend outside plot if there are many lines
+                    if len(line_handles) > 5:
+                        graph.axes.legend(line_handles, line_labels, loc='upper left', 
+                                       bbox_to_anchor=(1.02, 1), borderaxespad=0)
+                    else:
+                        graph.axes.legend(line_handles, line_labels, loc='best')
+                    
+                    # Enable grid for better readability
+                    graph.axes.grid(True, linestyle='--', alpha=0.7)
+                    
+                    # Make room for legend
+                    graph.figure.tight_layout()
+            else:
+                # No data to plot
+                graph.axes.text(0.5, 0.5, "No data available for selected simulations and variables",
+                             ha='center', va='center', fontsize=12)
             
-            # Set title and labels
-            if app_settings.DEBUG_LOGGING:
-                debug_print("DEBUG: Setting graph title and labels")
-            graph.axes.set_title(selected['title'])
-            graph.axes.set_xlabel(selected['x_label'])
-            graph.axes.set_ylabel(selected['y_label'])
-            
-            # Add legend if we have any entries (changed from > 1 to show legend even for one simulation)
-            if legend_entries:
-                if app_settings.DEBUG_LOGGING:
-                    debug_print(f"DEBUG: Adding legend with {len(legend_entries)} entries")
-                graph.axes.legend(
-                    handles=legend_entries, 
-                    fontsize='small',
-                    framealpha=0.9,
-                    loc='best'
-                )
-            
-            # Add grid for better readability
-            graph.axes.grid(True, linestyle='--', alpha=0.7)
-            
-            # Add annotation about similar plots if any were detected
-            has_similar_plots = any(len(group) > 1 for group in similar_groups)
-            if has_similar_plots:
-                if app_settings.DEBUG_LOGGING:
-                    debug_print("DEBUG: Adding annotation for similar plots")
-                # Position the annotation in figure space instead of axes space
-                graph.figure.text(
-                    0.5,  # Center horizontally
-                    0.01,  # Position at 1% from bottom of figure
-                    "Note: Similar plots use different line styles and markers",
-                    ha='center',
-                    fontsize=8,
-                    bbox=dict(boxstyle="round,pad=0.3", fc="lightyellow", ec="orange", alpha=0.8)
-                )
-            
-            # Tight layout for better use of space
-            graph.figure.tight_layout()
-            # Add extra padding at the bottom if we have the annotation
-            if has_similar_plots:
-                graph.figure.subplots_adjust(bottom=0.15)
-        
-        finally:
-            # Draw the canvas
-            if app_settings.DEBUG_LOGGING:
-                debug_print("DEBUG: Drawing canvas")
+            # Update the canvas
             graph.canvas.draw()
-            if app_settings.DEBUG_LOGGING:
-                debug_print("DEBUG: Canvas drawing completed")
+            
+        except Exception as e:
+            import traceback
+            debug_print(f"Error updating graph: {str(e)}")
+            traceback.print_exc()
+            
+            # Show error on graph
+            graph.axes.clear()
+            graph.axes.text(0.5, 0.5, f"Error: {str(e)}",
+                         ha='center', va='center', fontsize=12)
+            graph.canvas.draw()
+            
+        finally:
             # Reset busy state
             graph._updating = False
-            if app_settings.DEBUG_LOGGING:
-                debug_print("DEBUG: Graph update complete")
 
     def update_graph(self):
         """Update all graphs with data from selected simulations"""
@@ -1294,10 +1190,13 @@ class ResultsTabSuite(QWidget):
             traceback.print_exc()
 
     def refresh_simulations(self):
-        """Refresh the simulations data when simulations are added/removed"""
+        """
+        Refresh the simulations data when simulations are added/removed.
+        Note: Only simulations that have been run will be shown in the list.
+        """
         # Reload simulations from the suite
         if self.suite:
-            self.load_suite_simulations(self.suite) 
+            self.load_suite_simulations(self.suite)
 
     def _update_selection_status(self):
         """Update the UI to reflect selected simulations without redrawing graphs"""
