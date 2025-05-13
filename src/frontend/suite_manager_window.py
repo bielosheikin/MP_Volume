@@ -14,6 +14,7 @@ from PyQt5.QtGui import QFont, QIcon
 
 from ..backend.simulation_suite import SimulationSuite
 from .suite_window import SuiteWindow
+from ..app_settings import get_suites_directory, set_suites_directory
 
 
 class SuiteManagerWindow(QMainWindow):
@@ -49,8 +50,7 @@ class SuiteManagerWindow(QMainWindow):
         self.init_actions_section()
         
         # Load the previously selected directory or use default
-        self.suites_directory = self.settings.value("suites_directory", 
-                                                  os.path.join(os.getcwd(), "simulation_suites"))
+        self.suites_directory = get_suites_directory()
         self.directory_label.setText(f"Suites Directory: {self.suites_directory}")
         
         # Keep track of open suite windows
@@ -118,9 +118,90 @@ class SuiteManagerWindow(QMainWindow):
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
         
-        if directory:
+        if directory and directory != self.suites_directory:
+            # Ask user if they want to move existing suites to the new location
+            if os.path.exists(self.suites_directory) and os.listdir(self.suites_directory):
+                reply = QMessageBox.question(
+                    self,
+                    "Move Existing Suites",
+                    f"Do you want to move all existing simulation suites to the new location?\n\n"
+                    f"From: {self.suites_directory}\n"
+                    f"To: {directory}",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    # Close all open suite windows
+                    for suite_window in list(self.suite_windows.values()):
+                        if suite_window.isVisible():
+                            suite_window.close()
+                    self.suite_windows.clear()
+                    
+                    # Ensure new directory exists
+                    os.makedirs(directory, exist_ok=True)
+                    
+                    # Move all suites to the new location
+                    try:
+                        # Get list of suites to move before doing any changes
+                        suites_to_move = []
+                        for item in os.listdir(self.suites_directory):
+                            item_path = os.path.join(self.suites_directory, item)
+                            if os.path.isdir(item_path):
+                                # Check if it's a valid suite
+                                config_path = os.path.join(item_path, "config.json")
+                                has_simulations = False
+                                
+                                for subitem in os.listdir(item_path):
+                                    subitem_path = os.path.join(item_path, subitem)
+                                    if os.path.isdir(subitem_path) and os.path.exists(os.path.join(subitem_path, "simulation.pickle")):
+                                        has_simulations = True
+                                        break
+                                
+                                if os.path.exists(config_path) or has_simulations:
+                                    suites_to_move.append(item)
+                        
+                        # Move each suite
+                        for suite_name in suites_to_move:
+                            src_path = os.path.join(self.suites_directory, suite_name)
+                            dst_path = os.path.join(directory, suite_name)
+                            
+                            # Check if destination already exists
+                            if os.path.exists(dst_path):
+                                result = QMessageBox.question(
+                                    self,
+                                    "Suite Already Exists",
+                                    f"A suite named '{suite_name}' already exists in the destination.\n"
+                                    f"Do you want to replace it?",
+                                    QMessageBox.Yes | QMessageBox.No,
+                                    QMessageBox.No
+                                )
+                                
+                                if result == QMessageBox.Yes:
+                                    # Remove the existing destination
+                                    shutil.rmtree(dst_path)
+                                else:
+                                    # Skip this suite
+                                    continue
+                            
+                            # Copy the suite to new location
+                            shutil.copytree(src_path, dst_path)
+                        
+                        QMessageBox.information(
+                            self,
+                            "Suites Moved",
+                            f"Successfully moved {len(suites_to_move)} simulation suite(s) to the new location."
+                        )
+                    except Exception as e:
+                        QMessageBox.critical(
+                            self,
+                            "Error Moving Suites",
+                            f"Failed to move simulation suites: {str(e)}"
+                        )
+            
+            # Update directory setting globally
             self.suites_directory = directory
-            self.settings.setValue("suites_directory", directory)
+            set_suites_directory(directory)
             self.directory_label.setText(f"Suites Directory: {directory}")
             self.refresh_suites_list()
     

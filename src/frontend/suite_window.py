@@ -19,6 +19,7 @@ from .simulation_window import SimulationWindow
 from .simulation_manager import SimulationManager
 from .results_tab_suite import ResultsTabSuite
 from .. import app_settings
+from ..app_settings import get_suites_directory
 
 def debug_print(*args, **kwargs):
     """Wrapper for print that only prints if DEBUG_LOGGING is True"""
@@ -49,9 +50,14 @@ class SuiteWindow(QMainWindow):
         
         # Load the simulation suite (minimal load initially)
         try:
-            # Get the parent directory of the suite directory, which is the simulation_suites_root
-            simulation_suites_root = os.path.dirname(suite_directory)
+            # Get the simulation_suites_root from global settings
+            # This ensures we're always using the current global directory
+            simulation_suites_root = get_suites_directory()
             self.suite = SimulationSuite(suite_name, simulation_suites_root)
+            
+            # Update suite_directory to match the current setting
+            # This handles cases where the directory has been changed
+            self.suite_directory = os.path.join(simulation_suites_root, suite_name)
             
             self.progress.setValue(30)
             self.progress.setLabelText("Creating user interface...")

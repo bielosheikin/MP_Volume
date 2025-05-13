@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from .simulation import Simulation
-from ..app_settings import DEBUG_LOGGING
+from ..app_settings import DEBUG_LOGGING, get_suites_directory
 from .ion_and_channels_link import IonChannelsLink
 
 class SimulationSuite:
@@ -23,16 +23,23 @@ class SimulationSuite:
             ...
     """
     
-    def __init__(self, suite_name: str, simulation_suites_root: str = "simulation_suites"):
+    def __init__(self, suite_name: str, simulation_suites_root: str = None):
         """
         Initialize a SimulationSuite.
         
         Args:
             suite_name: Name of the simulation suite
             simulation_suites_root: Root directory for all simulation suites
+                                    If None, uses the global setting
         """
         self.suite_name = suite_name
-        self.simulation_suites_root = simulation_suites_root
+        
+        # Use the provided root or get from global settings
+        if simulation_suites_root is None:
+            self.simulation_suites_root = get_suites_directory()
+        else:
+            self.simulation_suites_root = simulation_suites_root
+            
         # Changed from List to set to prevent duplicates
         self.simulations = set()
         
