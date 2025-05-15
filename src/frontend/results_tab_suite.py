@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.gridspec import GridSpec
 import math
+from math import exp  # For channel dependency calculations
 
 from .multi_graph_widget import MultiGraphWidget
 from .. import app_settings
@@ -119,6 +120,12 @@ class ResultsTabSuite(QWidget):
         pdf_export_button.setToolTip("Export graphs and parameters to PDF")
         pdf_export_button.clicked.connect(self.save_all_to_pdf)
         export_options_layout.addWidget(pdf_export_button)
+        
+        # Export plots template button
+        export_template_button = QPushButton("Export Plots Template")
+        export_template_button.setToolTip("Export standard plots for pH, voltage, flux and channel dependencies")
+        export_template_button.clicked.connect(self.export_plots_template)
+        export_options_layout.addWidget(export_template_button)
         
         selection_layout.addLayout(export_options_layout)
         
@@ -2238,3 +2245,404 @@ class ResultsTabSuite(QWidget):
             debug_print(f"Error exporting histories: {str(e)}")
             import traceback
             traceback.print_exc()
+
+    def export_plots_template(self):
+        """Export predefined plot templates for all selected simulations
+        
+        Creates the following plot blocks for all selected simulations:
+        1. pH, voltage, volume and charge with time (2x2 grid)
+        2. Each channel flux with time
+        3. Each channel's dependency functions
+        """
+        if not self.selected_simulations:
+            debug_print("No simulations selected for export")
+            return
+            
+        # Ask user where to save the PDF
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Template Plots to PDF",
+            "",
+            "PDF Files (*.pdf);;All Files (*)"
+        )
+        
+        if not file_path:
+            # User canceled
+            return
+        
+        # Ensure the filename has .pdf extension
+        if not file_path.lower().endswith('.pdf'):
+            file_path += '.pdf'
+        
+        try:
+            # Create a PdfPages object
+            with PdfPages(file_path) as pdf:
+                # Get a representative simulation
+                if not self.selected_simulations:
+                    return
+                    
+                # Get first valid sim hash to use as reference
+                ref_sim_hash = None
+                for sim_hash in self.selected_simulations:
+                    if sim_hash in self.simulation_data:
+                        ref_sim_hash = sim_hash
+                        break
+                        
+                if not ref_sim_hash:
+                    debug_print("No valid simulations found")
+                    return
+                    
+                ref_sim_data = self.simulation_data[ref_sim_hash]
+                ref_display_name = ref_sim_data.get('display_name', f"Sim_{ref_sim_hash[:8]}")
+                
+                # Create multi-simulation plots - one of each type
+                
+                # Plot 1: pH, voltage, volume and charge with time (2x2 grid)
+                self._create_ph_voltage_time_plot(pdf, ref_sim_hash, "Multiple Simulations")
+                
+                # Plot 2: Each channel flux with time 
+                self._create_flux_time_plots(pdf, ref_sim_hash, "Multiple Simulations")
+                
+                # Plot 3: Channel dependency functions
+                # These need to be done separately for each simulation since dependencies are simulation-specific
+                for sim_hash in self.selected_simulations:
+                    if sim_hash not in self.simulation_data:
+                        continue
+                        
+                    sim_data = self.simulation_data[sim_hash]
+                    display_name = sim_data.get('display_name', f"Sim_{sim_hash[:8]}")
+                    
+                    # Check if simulation has been run
+                    if not sim_data.get('has_run', False):
+                        debug_print(f"Skipping unrun simulation for dependency plots: {display_name}")
+                        continue
+                    
+                    # Create channel dependency plots for this simulation
+                    self._create_channel_dependency_plots(pdf, sim_hash, display_name)
+                
+                # Set PDF metadata
+                d = pdf.infodict()
+                d['Title'] = 'Simulation Template Plots'
+                d['Subject'] = 'Standard plots for all simulations'
+        
+        except Exception as e:
+            debug_print(f"Error exporting template plots: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def _create_ph_voltage_time_plot(self, pdf, sim_hash, display_name):
+        """Create a 2x2 grid of plots with pH, voltage, volume and charge over time"""
+        sim_data = self.simulation_data[sim_hash]
+        available_histories = sim_data.get('available_histories', [])
+        
+        # Check if we have required data
+        if 'simulation_time' not in available_histories:
+            return
+            
+        # Check which data is available
+        has_ph = 'Vesicle_pH' in available_histories
+        has_voltage = 'Vesicle_voltage' in available_histories
+        has_volume = 'Vesicle_volume' in available_histories
+        has_charge = 'Vesicle_charge' in available_histories
+        
+        # Skip if none of the data is available
+        if not any([has_ph, has_voltage, has_volume, has_charge]):
+            return
+            
+        # Create figure with 2x2 grid of subplots
+        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle(f"Time Series Plots: {display_name}", fontsize=14)
+        
+        # Flatten for easier indexing
+        axs = axs.flatten()
+        
+        # Define plot positions and titles
+        plots_config = [
+            {'var': 'Vesicle_pH', 'title': 'pH vs Time', 'position': 0, 'color': 'b', 'available': has_ph},
+            {'var': 'Vesicle_voltage', 'title': 'Voltage vs Time', 'position': 1, 'color': 'r', 'available': has_voltage},
+            {'var': 'Vesicle_volume', 'title': 'Volume vs Time', 'position': 2, 'color': 'g', 'available': has_volume},
+            {'var': 'Vesicle_charge', 'title': 'Charge vs Time', 'position': 3, 'color': 'purple', 'available': has_charge}
+        ]
+        
+        # Define colors for different simulations
+        sim_colors = ['b', 'r', 'g', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        
+        # Process each plot type
+        for plot_config in plots_config:
+            if not plot_config['available']:
+                # Show "No data available" text for missing plots
+                axs[plot_config['position']].text(0.5, 0.5, f"No {plot_config['title']} data available", 
+                                        ha='center', va='center', fontsize=12)
+                axs[plot_config['position']].set_title(plot_config['title'])
+                continue
+            
+            # Set up the plot
+            ax = axs[plot_config['position']]
+            ax.set_title(plot_config['title'])
+            ax.set_xlabel('Time (s)')
+            
+            # Set y-label based on the variable type
+            if plot_config['var'] == 'Vesicle_pH':
+                ax.set_ylabel('pH')
+            elif plot_config['var'] == 'Vesicle_voltage':
+                ax.set_ylabel('Voltage (V)')
+            elif plot_config['var'] == 'Vesicle_volume':
+                ax.set_ylabel('Volume (m³)')
+            elif plot_config['var'] == 'Vesicle_charge':
+                ax.set_ylabel('Charge (C)')
+            
+            # Enable grid
+            ax.grid(True, linestyle='--', alpha=0.7)
+            
+            # This will accumulate all selected simulations on the same plot
+            sim_count = 0
+            
+            # Start with this simulation
+            sim_hash_list = [sim_hash]
+            
+            # Add other selected simulations
+            for other_sim_hash in self.selected_simulations:
+                if other_sim_hash != sim_hash:
+                    sim_hash_list.append(other_sim_hash)
+            
+            # Plot each simulation on this subplot
+            for i, current_sim_hash in enumerate(sim_hash_list):
+                if current_sim_hash not in self.simulation_data:
+                    continue
+                    
+                current_sim_data = self.simulation_data[current_sim_hash]
+                current_available_histories = current_sim_data.get('available_histories', [])
+                
+                # Skip if this simulation doesn't have the required data
+                if 'simulation_time' not in current_available_histories or plot_config['var'] not in current_available_histories:
+                    continue
+                
+                # Get time and variable data
+                time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                var_data = self.get_simulation_variable(current_sim_hash, plot_config['var'])
+                
+                if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
+                    # Get the color for this simulation
+                    color = sim_colors[sim_count % len(sim_colors)]
+                    sim_count += 1
+                    
+                    # Get simulation name for the legend
+                    current_display_name = current_sim_data.get('display_name', f"Sim_{current_sim_hash[:8]}")
+                    
+                    # Plot the data
+                    ax.plot(time_data, var_data, color=color, label=current_display_name)
+            
+            # Add legend if we have multiple simulations
+            if sim_count > 1:
+                ax.legend(fontsize='small')
+        
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust for the suptitle
+        pdf.savefig(fig)
+        plt.close(fig)
+    
+    def _create_flux_time_plots(self, pdf, sim_hash, display_name):
+        """Create plots for each channel flux over time"""
+        sim_data = self.simulation_data[sim_hash]
+        available_histories = sim_data.get('available_histories', [])
+        
+        # Check if we have time data
+        if 'simulation_time' not in available_histories:
+            return
+            
+        # Find all flux histories
+        flux_variables = [var for var in available_histories if var.endswith('_flux') or '_channel_flux' in var]
+        
+        if not flux_variables:
+            return
+            
+        # Create a single figure with all flux plots
+        n_plots = len(flux_variables)
+        
+        # Calculate rows and columns for the subplots
+        if n_plots <= 3:
+            n_rows, n_cols = n_plots, 1
+        elif n_plots <= 4:
+            n_rows, n_cols = 2, 2
+        elif n_plots <= 6:
+            n_rows, n_cols = 3, 2
+        else:
+            n_rows, n_cols = (n_plots + 1) // 2, 2
+        
+        fig, axs = plt.subplots(n_rows, n_cols, figsize=(10, 3*n_rows))
+        fig.suptitle(f"Channel Fluxes over Time", fontsize=14)
+        
+        # Handle the case of a single plot (axs is not an array)
+        if n_plots == 1:
+            axs = np.array([axs])
+        
+        # Define colors for different simulations
+        sim_colors = ['b', 'r', 'g', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        
+        # Get all simulation hashes to plot
+        sim_hash_list = [sim_hash] + [h for h in self.selected_simulations if h != sim_hash]
+        
+        # Handle case of multiple plots by looping through them
+        for i, flux_var in enumerate(flux_variables):
+            # Calculate row and column for this plot
+            if n_cols == 1:
+                ax = axs[i] if n_rows > 1 else axs
+            else:
+                row, col = i // n_cols, i % n_cols
+                ax = axs[row, col] if n_rows > 1 else axs[col]
+            
+            # Get a nice display name for the channel
+            channel_name = flux_var.replace('_flux', '').replace('_channel', '').title()
+            
+            # Set up the plot
+            ax.set_title(f'{channel_name} Flux')
+            ax.set_ylabel('Flux')
+            ax.set_xlabel('Time (s)')
+            ax.grid(True, linestyle='--', alpha=0.7)
+            
+            # This will track how many simulations are plotted on this subplot
+            sim_count = 0
+            
+            # Plot each simulation on this subplot
+            for j, current_sim_hash in enumerate(sim_hash_list):
+                if current_sim_hash not in self.simulation_data:
+                    continue
+                    
+                current_sim_data = self.simulation_data[current_sim_hash]
+                current_available_histories = current_sim_data.get('available_histories', [])
+                
+                # Skip if this simulation doesn't have the required data
+                if 'simulation_time' not in current_available_histories or flux_var not in current_available_histories:
+                    continue
+                
+                # Get time and flux data
+                time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                flux_data = self.get_simulation_variable(current_sim_hash, flux_var)
+                
+                if time_data is not None and flux_data is not None and len(time_data) > 0 and len(flux_data) > 0:
+                    # Get the color for this simulation
+                    color = sim_colors[sim_count % len(sim_colors)]
+                    sim_count += 1
+                    
+                    # Get simulation name for the legend
+                    current_display_name = current_sim_data.get('display_name', f"Sim_{current_sim_hash[:8]}")
+                    
+                    # Plot the data
+                    ax.plot(time_data, flux_data, color=color, label=current_display_name)
+            
+            # Add legend if we have multiple simulations
+            if sim_count > 1:
+                ax.legend(fontsize='small')
+        
+        # Hide unused subplots
+        if n_cols > 1:
+            for i in range(n_plots, n_rows * n_cols):
+                row, col = i // n_cols, i % n_cols
+                if n_rows > 1:
+                    fig.delaxes(axs[row, col])
+        
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust for the suptitle
+        pdf.savefig(fig)
+        plt.close(fig)
+    
+    def _create_channel_dependency_plots(self, pdf, sim_hash, display_name):
+        """Create plots for each channel's dependency functions"""
+        # Get metadata to check for channels with dependencies
+        sim_data = self.simulation_data[sim_hash]
+        metadata = sim_data.get('metadata', {})
+        
+        # Check if we have the channels configuration
+        channels_config = metadata.get('channels', {})
+        
+        # Find channels with dependencies
+        channels_with_dependencies = []
+        
+        for channel_name, channel_params in channels_config.items():
+            if isinstance(channel_params, dict):
+                # Get dependency type and check if it exists
+                dependence_type = channel_params.get('dependence_type')
+                if dependence_type in ['pH', 'voltage', 'voltage_and_pH']:
+                    # Add to the list of channels with dependencies
+                    channels_with_dependencies.append((channel_name, channel_params))
+        
+        # Skip if no channels with dependencies
+        if not channels_with_dependencies:
+            return
+        
+        # pH range for the dependency functions
+        ph_range = np.linspace(4.0, 8.0, 100)
+        
+        # Voltage range for the dependency functions
+        voltage_range = np.linspace(-0.15, 0.05, 100)
+        
+        # Process each channel with dependencies
+        for channel_name, channel_params in channels_with_dependencies:
+            dependence_type = channel_params.get('dependence_type')
+            display_channel_name = channel_params.get('display_name', channel_name.upper())
+            
+            # Determine which dependencies we need to plot
+            has_ph_dependency = 'pH' in dependence_type if dependence_type else False
+            has_voltage_dependency = 'voltage' in dependence_type if dependence_type else False
+            
+            # Count how many plots we need (pH and/or voltage)
+            n_plots = sum([has_ph_dependency, has_voltage_dependency])
+            
+            if n_plots == 0:
+                continue
+            
+            # Create a figure with appropriate subplots - one for each dependency
+            fig, axs = plt.subplots(1, n_plots, figsize=(6*n_plots, 5))
+            fig.suptitle(f"{display_name}: {display_channel_name} Dependency Functions", fontsize=14)
+            
+            # Handle case when we have only one plot
+            if n_plots == 1:
+                axs = [axs]
+            
+            # Plot counter for indexing
+            plot_idx = 0
+            
+            # Plot pH dependency if applicable
+            if has_ph_dependency:
+                # Get pH dependency parameters
+                ph_exponent = channel_params.get('pH_exponent')
+                half_act_ph = channel_params.get('half_act_pH')
+                
+                if ph_exponent is not None and half_act_ph is not None:
+                    # Calculate pH dependency
+                    ph_dep = [1.0 / (1.0 + exp(ph_exponent * (ph - half_act_ph))) for ph in ph_range]
+                    
+                    # Plot with a color based on the value of the exponent
+                    color = 'b' if ph_exponent < 0 else 'r'
+                    axs[plot_idx].plot(ph_range, ph_dep, f'{color}-', 
+                                      label=f'Exponent={ph_exponent}, Half-act={half_act_ph}')
+                    
+                    axs[plot_idx].set_xlabel('pH')
+                    axs[plot_idx].set_ylabel('Dependency Value')
+                    axs[plot_idx].set_title(f'{display_channel_name} pH Dependency')
+                    axs[plot_idx].grid(True, linestyle='--', alpha=0.7)
+                    axs[plot_idx].legend()
+                    
+                    plot_idx += 1
+            
+            # Plot voltage dependency if applicable
+            if has_voltage_dependency:
+                # Get voltage dependency parameters
+                voltage_exponent = channel_params.get('voltage_exponent')
+                half_act_voltage = channel_params.get('half_act_voltage')
+                
+                if voltage_exponent is not None and half_act_voltage is not None:
+                    # Calculate voltage dependency
+                    voltage_dep = [1.0 / (1.0 + exp(voltage_exponent * (v - half_act_voltage))) for v in voltage_range]
+                    
+                    # Plot with appropriate color
+                    axs[plot_idx].plot(voltage_range, voltage_dep, 'g-', 
+                                     label=f'Exponent={voltage_exponent}, Half-act={half_act_voltage}')
+                    
+                    axs[plot_idx].set_xlabel('Voltage (V)')
+                    axs[plot_idx].set_ylabel('Dependency Value')
+                    axs[plot_idx].set_title(f'{display_channel_name} Voltage Dependency')
+                    axs[plot_idx].grid(True, linestyle='--', alpha=0.7)
+                    axs[plot_idx].legend()
+            
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust for the suptitle
+            pdf.savefig(fig)
+            plt.close(fig)
