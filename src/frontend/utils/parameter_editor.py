@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QLabel, QComboBox, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QFrame, QGroupBox, QSplitter
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QLabel, QComboBox, QCheckBox, QMessageBox, QWidget, QHBoxLayout, QFrame, QGroupBox, QSplitter, QTabWidget
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QDoubleValidator, QRegExpValidator
 from PyQt5.QtCore import QRegExp
@@ -88,13 +88,29 @@ class ParameterEditorDialog(QDialog):
         # Add the form widget to the splitter
         self.splitter.addWidget(self.form_widget)
         
-        # Right side: Equation display
+        # Right side: Equation display with tabs
         self.equation_group = QGroupBox("Equations")
         self.equation_layout = QVBoxLayout(self.equation_group)
         
-        # Create and add the equation display
+        # Create tab widget for the equations
+        self.equation_tabs = QTabWidget()
+        
+        # Create and add the main equation display tab
+        self.main_equations_widget = QWidget()
+        self.main_equations_layout = QVBoxLayout(self.main_equations_widget)
         self.equation_display = LatexEquationDisplay()
-        self.equation_layout.addWidget(self.equation_display)
+        self.main_equations_layout.addWidget(self.equation_display)
+        self.equation_tabs.addTab(self.main_equations_widget, "Channel Equations")
+        
+        # Create and add the "Other Equations" tab
+        self.other_equations_widget = QWidget()
+        self.other_equations_layout = QVBoxLayout(self.other_equations_widget)
+        self.other_equation_display = LatexEquationDisplay()
+        self.other_equations_layout.addWidget(self.other_equation_display)
+        self.equation_tabs.addTab(self.other_equations_widget, "Other Equations")
+        
+        # Add the tabbed widget to the equation layout
+        self.equation_layout.addWidget(self.equation_tabs)
         
         # Add the equation group to the splitter
         self.splitter.addWidget(self.equation_group)
@@ -502,6 +518,76 @@ class ParameterEditorDialog(QDialog):
         self.equation_display.add_equation("Nernst Potential", nernst_eq)
         self.equation_display.add_equation("Ion Flux", flux_eq)
         self.equation_display.add_equation("Parameter Descriptions", param_info_html)
+        
+        # Update the other equations tab
+        self.update_other_equations()
+
+    def update_other_equations(self):
+        """Update the other equations tab with static equations"""
+        # Clear existing equations
+        self.other_equation_display.clear_equations()
+        
+        # Add static equations for the "Other Equations" tab
+        
+        # Unaccounted ion species (X_amount) - directly from simulation.py
+        x_amount_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">X<sub>amount</sub> = </td><td style="padding:2px; text-align:left;">((Vesicle.init_charge / F) - (∑(z<sub>i</sub> × c<sub>i,init</sub>) × 1000 × V<sub>init</sub>))</td></tr></table>'
+        
+        # Volume equation - directly from simulation.py with corrected units
+        volume_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">Volume = </td><td style="padding:2px; text-align:left;">V<sub>init</sub> × (∑(n<sub>i</sub>) + |X<sub>amount</sub>|) / (∑(n<sub>i,init</sub>) + |X<sub>amount</sub>|)</td></tr></table>'
+        
+        # Area equation - directly from simulation.py
+        area_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">Area = </td><td style="padding:2px; text-align:left;">VOLUME_TO_AREA_CONSTANT × Volume<sup>2/3</sup></td></tr></table>'
+        
+        # Charge equation - directly from simulation.py
+        charge_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">Q = </td><td style="padding:2px; text-align:left;">(∑(z<sub>i</sub> × n<sub>i</sub>) + X<sub>amount</sub>) × F</td></tr></table>'
+        
+        # Capacitance equation - directly from simulation.py
+        capacitance_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">C = </td><td style="padding:2px; text-align:left;">Area × specific_capacitance</td></tr></table>'
+        
+        # Voltage equation - directly from simulation.py
+        voltage_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">V = </td><td style="padding:2px; text-align:left;">Q / C</td></tr></table>'
+        
+        # Buffer capacity equation - directly from simulation.py
+        buffer_capacity_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">β = </td><td style="padding:2px; text-align:left;">β<sub>init</sub> × Volume / V<sub>init</sub></td></tr></table>'
+        
+        # pH equation - directly from simulation.py
+        ph_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">pH = </td><td style="padding:2px; text-align:left;">-log<sub>10</sub>([H<sup>+</sup>]<sub>free</sub>)</td></tr></table>'
+        
+        # Free hydrogen equation from update_pH method
+        free_h_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">[H<sup>+</sup>]<sub>free</sub> = </td><td style="padding:2px; text-align:left;">[H<sup>+</sup>]<sub>total</sub> × β</td></tr></table>'
+        
+        # Add equations to the other equations display
+        self.other_equation_display.add_equation("Unaccounted Ion Species", x_amount_eq)
+        self.other_equation_display.add_equation("Volume", volume_eq)
+        self.other_equation_display.add_equation("Area", area_eq)
+        self.other_equation_display.add_equation("Charge", charge_eq)
+        self.other_equation_display.add_equation("Capacitance", capacitance_eq)
+        self.other_equation_display.add_equation("Voltage", voltage_eq)
+        self.other_equation_display.add_equation("Buffer Capacity", buffer_capacity_eq)
+        self.other_equation_display.add_equation("Free Hydrogen", free_h_eq)
+        self.other_equation_display.add_equation("pH", ph_eq)
+        
+        # Add explanations for the parameters in the equations
+        params_description = """
+        <ul style='margin-left: 15px;'>
+            <li><b>X<sub>amount</sub></b>: Amount of unaccounted ion species</li>
+            <li><b>F</b>: Faraday constant</li>
+            <li><b>z<sub>i</sub></b>: Valence/elementary charge of ion i</li>
+            <li><b>c<sub>i</sub></b>: Concentration of ion i</li>
+            <li><b>c<sub>i,init</sub></b>: Initial concentration of ion i</li>
+            <li><b>V<sub>init</sub></b>: Initial volume</li>
+            <li><b>n<sub>i</sub></b>: Amount of ion i</li>
+            <li><b>Q</b>: Charge</li>
+            <li><b>C</b>: Capacitance</li>
+            <li><b>V</b>: Voltage</li>
+            <li><b>VOLUME_TO_AREA_CONSTANT</b>: Constant for converting volume to area</li>
+            <li><b>β</b>: Buffer capacity</li>
+            <li><b>β<sub>init</sub></b>: Initial buffer capacity</li>
+            <li><b>[H<sup>+</sup>]<sub>free</sub></b>: Free hydrogen concentration</li>
+            <li><b>[H<sup>+</sup>]<sub>total</sub></b>: Total hydrogen concentration</li>
+        </ul>
+        """
+        self.other_equation_display.add_equation("Parameter Descriptions", params_description)
 
     def get_current_parameters(self):
         """Get the current parameter values from the UI inputs"""

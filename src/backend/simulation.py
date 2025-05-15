@@ -280,11 +280,16 @@ class Simulation(Configurable, Trackable):
                 (sum(ion.elementary_charge * ion.init_vesicle_conc for ion in self.all_species)) * 1000 * self.vesicle.init_volume)
     
     def update_volume(self):
+        # Calculate the sum of current amounts (excluding hydrogen)
+        current_amounts_sum = sum(ion.vesicle_amount for ion in self.all_species if ion.display_name != 'h')
+        
+        # Calculate the sum of initial amounts (excluding hydrogen)
+        initial_amounts_sum = sum(ion.init_vesicle_conc * 1000 * self.vesicle.init_volume for ion in self.all_species if ion.display_name != 'h')
+        
+        # Update volume based on the ratio of total amounts including unaccounted ions
         self.vesicle.volume = (self.vesicle.init_volume * 
-                               (sum(ion.vesicle_conc for ion in self.all_species if ion.display_name != 'h') + 
-                                abs(self.unaccounted_ion_amounts)) /
-                                (sum(ion.init_vesicle_conc for ion in self.all_species if ion.display_name != 'h') +
-                                abs(self.unaccounted_ion_amounts))
+                               (current_amounts_sum + abs(self.unaccounted_ion_amounts)) /
+                               (initial_amounts_sum + abs(self.unaccounted_ion_amounts))
                               )
 
     def update_area(self):
