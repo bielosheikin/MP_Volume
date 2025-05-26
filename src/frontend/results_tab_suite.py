@@ -377,6 +377,8 @@ class ResultsTabSuite(QWidget):
                 sim_hash = first_checkbox.property("sim_hash")
                 if sim_hash:
                     self.selected_simulations = [sim_hash]
+                    # Update variable dropdowns now that we have a selected simulation
+                    self.populate_variable_dropdowns()
             
             # Display a message to click Plot - without rendering the actual data yet
             self._update_selection_status()
@@ -507,35 +509,40 @@ class ResultsTabSuite(QWidget):
         return None
     
     def populate_variable_dropdowns(self):
-        """Find common variables across all loaded simulations and update graph widgets"""
-        # Find common variables across all loaded simulations
-        common_variables = set()
-        first_sim = True
+        """Find variables available in selected simulations and update graph widgets"""
+        # Find variables available in any of the selected simulations (union)
+        available_variables = set()
         
-        for sim_hash, sim_data in self.simulation_data.items():
-            # Use available_histories from metadata instead of checking loaded data
-            available_vars = set(sim_data.get('available_histories', []))
-            
-            # Always include 'time' if it exists (already loaded)
-            if 'time' in sim_data['data']:
-                available_vars.add('time')
+        # If no simulations are selected, use all loaded simulations as fallback
+        simulations_to_check = self.selected_simulations if self.selected_simulations else list(self.simulation_data.keys())
+        
+        for sim_hash in simulations_to_check:
+            if sim_hash in self.simulation_data:
+                sim_data = self.simulation_data[sim_hash]
+                # Use available_histories from metadata instead of checking loaded data
+                available_vars = set(sim_data.get('available_histories', []))
                 
-            if first_sim:
-                common_variables = available_vars
-                first_sim = False
-            else:
-                common_variables &= available_vars
+                # Always include 'time' if it exists (already loaded)
+                if 'time' in sim_data['data']:
+                    available_vars.add('time')
+                
+                # Add all variables from this simulation (union)
+                available_variables |= available_vars
         
-        # If we don't have any variables or simulations, show a message
-        if not common_variables:
-            debug_print("Warning: No common variables found across selected simulations")
+        # If we don't have any variables, show a message
+        if not available_variables:
+            debug_print("Warning: No variables found in selected simulations")
             return
         
         # Convert to sorted list
-        variables_list = sorted(common_variables)
+        variables_list = sorted(available_variables)
         
         # Update all graphs with the new variables
         self.graph_widget.update_variables(variables_list)
+        
+        # Debug info
+        if len(simulations_to_check) > 0:
+            debug_print(f"Updated variable dropdowns with {len(variables_list)} variables from {len(simulations_to_check)} selected simulation(s)")
     
     def select_all_simulations(self):
         """Select all simulations by checking all checkboxes"""

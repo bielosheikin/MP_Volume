@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import math
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
@@ -108,9 +109,11 @@ class SimulationWindow(QMainWindow):
         self.tabs.addTab(self.channels_tab, "Channels")
         self.tabs.addTab(self.simulation_params_tab, "Simulation Parameters")  # Use consistent name
         
-        # Connect ion species updates to channels tab and vesicle tab
+        # Connect ion species updates to channels tab
         self.ion_species_tab.ion_species_updated.connect(self.update_channel_ion_species)
-        self.ion_species_tab.ion_species_updated.connect(self.update_vesicle_calculated_pH)
+        
+        # Connect vesicle tab hydrogen concentration changes to ion species tab
+        self.vesicle_tab.hydrogen_concentration_changed.connect(self.update_hydrogen_concentration_in_ion_species)
         
         # Update available ion species in the channels tab
         self.update_channel_ion_species()
@@ -154,22 +157,37 @@ class SimulationWindow(QMainWindow):
         # Update available ion species in channels tab
         self.channels_tab.update_ion_species_list(list(ion_species_data.keys()))
     
-    def update_vesicle_calculated_pH(self):
-        """Update the calculated pH in the vesicle tab based on current hydrogen concentration"""
-        # Get current ion species data
-        ion_species_data = self.ion_species_tab.get_data()
-        
-        # Only update if we have valid data with a hydrogen ion
-        if ion_species_data and 'h' in ion_species_data:
-            # Get the hydrogen concentration
-            h_conc = ion_species_data['h']['init_vesicle_conc']
+    def update_hydrogen_concentration_in_ion_species(self, h_concentration):
+        """Update hydrogen concentration in the ion species tab when it changes in vesicle tab"""
+        try:
+            # Get current ion species data
+            ion_species_data = self.ion_species_tab.get_data()
+            if not ion_species_data:
+                ion_species_data = {}
             
-            # Only update if the hydrogen concentration has actually changed
-            if self.vesicle_tab.h_concentration != h_conc:
-                debug_print(f"Hydrogen concentration changed: {self.vesicle_tab.h_concentration} -> {h_conc}")
-                # Update the vesicle tab's hydrogen concentration and recalculate pH
-                self.vesicle_tab.h_concentration = h_conc
-                self.vesicle_tab.update_calculated_pH()
+            # Update or add hydrogen species with the new concentration
+            ion_species_data['h'] = {
+                'init_vesicle_conc': h_concentration,
+                'exterior_conc': ion_species_data.get('h', {}).get('exterior_conc', 12.619146889603859 * 1e-5),  # Default exterior conc
+                'elementary_charge': 1
+            }
+            
+            # Update the ion species tab
+            self.ion_species_tab.set_data(ion_species_data)
+            
+            # Update available ion species in channels tab
+            self.update_channel_ion_species()
+            
+            debug_print(f"Updated hydrogen concentration to {h_concentration:.6e} M")
+            
+        except Exception as e:
+            debug_print(f"Error updating hydrogen concentration: {str(e)}")
+    
+    def update_vesicle_calculated_pH(self):
+        """Legacy method - now vesicle tab calculates its own values"""
+        # This method is kept for compatibility but is no longer used
+        # The vesicle tab now calculates hydrogen concentration from pH directly
+        pass
     
     def populate_from_simulation(self):
         """Populate the UI with data from the loaded simulation"""
@@ -187,8 +205,9 @@ class SimulationWindow(QMainWindow):
             }
             self.simulation_params_tab.set_data(sim_params)
             
-            # First populate the ion species tab since vesicle tab needs H+ concentration
+            # First populate the ion species tab
             ion_species_data = {}
+            vesicle_pH = None
             for name, species in self.simulation.species.items():
                 ion_species_data[name] = {
                     "init_vesicle_conc": species.init_vesicle_conc,
@@ -196,18 +215,28 @@ class SimulationWindow(QMainWindow):
                     "elementary_charge": species.elementary_charge
                 }
                 
-                # Store hydrogen concentration for vesicle tab's pH calculation
+                # Calculate initial vesicle pH from hydrogen concentration and buffer capacity
                 if name == 'h':
-                    self.vesicle_tab.h_concentration = species.init_vesicle_conc
+                    try:
+                        buffer_capacity = self.simulation.init_buffer_capacity
+                        free_h_conc = species.init_vesicle_conc * buffer_capacity
+                        vesicle_pH = -math.log10(free_h_conc) if free_h_conc > 0 else 7.4
+                    except:
+                        vesicle_pH = 7.4  # Default physiological pH
             
             self.ion_species_tab.set_data(ion_species_data)
             
-            # Now populate the vesicle tab with both vesicle_params and init_buffer_capacity
+            # Now populate the vesicle tab with calculated pH
             vesicle_data = {
                 "vesicle_params": self.simulation.vesicle_params,
                 "exterior_params": self.simulation.exterior_params,
-                "init_buffer_capacity": self.simulation.init_buffer_capacity  # Add buffer capacity
+                "init_buffer_capacity": self.simulation.init_buffer_capacity
             }
+            
+            # Add calculated vesicle pH if we have hydrogen species
+            if vesicle_pH is not None:
+                vesicle_data["init_vesicle_pH"] = vesicle_pH
+            
             self.vesicle_tab.set_data(vesicle_data)
             
             # Update the channel tab's available ion species
@@ -272,13 +301,30 @@ class SimulationWindow(QMainWindow):
             if not vesicle_data:
                 return None
             
-            # Extract init_buffer_capacity from vesicle_data
+            # Extract init_buffer_capacity and init_vesicle_pH from vesicle_data
             init_buffer_capacity = vesicle_data.pop("init_buffer_capacity", 5e-4)  # Default if not provided
+            init_vesicle_pH = vesicle_data.pop("init_vesicle_pH", None)
             
             # Get ion species data
             ion_species_data_plain = self.ion_species_tab.get_data()
             if not ion_species_data_plain:
                 return None
+            
+            # Override hydrogen concentration with calculated value from vesicle tab
+            if init_vesicle_pH is not None:
+                calculated_h_conc = self.vesicle_tab.get_calculated_hydrogen_concentration()
+                if calculated_h_conc is not None:
+                    # Update hydrogen concentration in ion species data
+                    if 'h' in ion_species_data_plain:
+                        ion_species_data_plain['h']['init_vesicle_conc'] = calculated_h_conc
+                    else:
+                        # Create hydrogen species if it doesn't exist
+                        ion_species_data_plain['h'] = {
+                            'init_vesicle_conc': calculated_h_conc,
+                            'exterior_conc': 12.619146889603859 * 1e-5,  # Default exterior conc
+                            'elementary_charge': 1
+                        }
+                    debug_print(f"Using calculated hydrogen concentration: {calculated_h_conc:.6e} M from pH {init_vesicle_pH:.3f}")
             
             # Get channels data
             channels_data_plain, ion_channel_links = self.channels_tab.get_data()
@@ -349,7 +395,8 @@ class SimulationWindow(QMainWindow):
                 "species": ion_species_data,
                 "ion_channel_links": ion_channel_links,
                 **vesicle_data,  # vesicle_params and exterior_params
-                "init_buffer_capacity": init_buffer_capacity  # Add buffer capacity
+                "init_buffer_capacity": init_buffer_capacity,  # Add buffer capacity
+                "init_vesicle_pH": init_vesicle_pH  # Add vesicle pH for future reference
             }
             
             return simulation_data

@@ -26,6 +26,7 @@ class Simulation(Configurable, Trackable):
     total_time: float = 100.0
     temperature: float = 2578.5871 / IDEAL_GAS_CONSTANT
     init_buffer_capacity: float = 5e-4
+    init_vesicle_pH: Optional[float] = None  # New field for initial vesicle pH
     channels: Optional[Dict[str, IonChannel]] = None
     species: Optional[Dict[str, IonSpecies]] = None
     ion_channel_links: Optional[IonChannelsLink] = None

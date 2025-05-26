@@ -9,7 +9,7 @@ default_ion_species = {
     ),
     "h": IonSpecies(
         display_name='h',
-        init_vesicle_conc=7.962143411069938 * 1e-5,
+        init_vesicle_conc=7.962143411069938 * 1e-5,  # Gives pH 7.4 with default buffer capacity 0.0005
         exterior_conc=12.619146889603859 * 1e-5,
         elementary_charge=1
     ),
