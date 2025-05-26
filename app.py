@@ -1,4 +1,20 @@
 import sys
+import os
+
+# Add current directory and src to Python path for PyInstaller compatibility
+if getattr(sys, 'frozen', False):
+    # Running as PyInstaller executable
+    current_dir = os.path.dirname(sys.executable)
+else:
+    # Running as script
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+src_dir = os.path.join(current_dir, 'src')
+if os.path.exists(src_dir) and src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 from PyQt5.QtWidgets import QApplication
 
