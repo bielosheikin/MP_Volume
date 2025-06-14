@@ -67,6 +67,10 @@ class EquationGenerator:
         except (ValueError, TypeError):
             secondary_exp = 0 if not secondary_ion else 1
             
+        # Check for inversion flags
+        invert_primary = parameters.get('invert_primary_log_term', False)
+        invert_secondary = parameters.get('invert_secondary_log_term', False)
+        
         # Check for custom Nernst constant
         try:
             custom_nernst = parameters.get('custom_nernst_constant')
@@ -153,8 +157,11 @@ class EquationGenerator:
             
             # Ion ratio
             if not secondary_ion or secondary_exp == 0:
-                # Simple ratio for single ion
-                ion_ratio = EquationGenerator.format_fraction(primary_out, primary_in) 
+                # Simple ratio for single ion - respect inversion flag
+                if invert_primary:
+                    ion_ratio = EquationGenerator.format_fraction(primary_in, primary_out)
+                else:
+                    ion_ratio = EquationGenerator.format_fraction(primary_out, primary_in) 
                 html += f'<td style="padding:2px; text-align:center; vertical-align:middle;">{ion_ratio}</td>'
             else:
                 # Two-ion channel
@@ -171,9 +178,24 @@ class EquationGenerator:
                     secondary_out = f"{secondary_out}<sup>{secondary_exp}</sup>"
                     secondary_in = f"{secondary_in}<sup>{secondary_exp}</sup>"
                 
-                # Format the complex ratio
-                numerator = f"{primary_out} × {secondary_in}"
-                denominator = f"{primary_in} × {secondary_out}"
+                # Format the complex ratio - respect inversion flags
+                # Determine primary and secondary terms based on inversion flags
+                if invert_primary:
+                    primary_term = primary_in
+                    primary_term_inv = primary_out
+                else:
+                    primary_term = primary_out
+                    primary_term_inv = primary_in
+                
+                if invert_secondary:
+                    secondary_term = secondary_out
+                    secondary_term_inv = secondary_in
+                else:
+                    secondary_term = secondary_in
+                    secondary_term_inv = secondary_out
+                
+                numerator = f"{primary_term} × {secondary_term}"
+                denominator = f"{primary_term_inv} × {secondary_term_inv}"
                 complex_ratio = EquationGenerator.format_fraction(numerator, denominator)
                 html += f'<td style="padding:2px; text-align:center; vertical-align:middle;">{complex_ratio}</td>'
             
@@ -316,5 +338,7 @@ class EquationGenerator:
             'pH_exponent': 'Slope factor for pH-dependent activation',
             'half_act_pH': 'pH at which the channel is half-activated',
             'time_exponent': 'Slope factor for time-dependent activation',
-            'half_act_time': 'Time at which the channel is half-activated (s)'
+            'half_act_time': 'Time at which the channel is half-activated (s)',
+            'invert_primary_log_term': 'Invert the primary ion concentration ratio in the log term (vesicle/exterior instead of exterior/vesicle)',
+            'invert_secondary_log_term': 'Invert the secondary ion concentration ratio in the log term (exterior/vesicle instead of vesicle/exterior)'
         } 

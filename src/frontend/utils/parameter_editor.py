@@ -142,7 +142,9 @@ class ParameterEditorDialog(QDialog):
             'pH_exponent': 'pH Exponent',
             'half_act_pH': 'Half Activation pH',
             'time_exponent': 'Time Exponent',
-            'half_act_time': 'Half Activation Time'
+            'half_act_time': 'Half Activation Time',
+            'invert_primary_log_term': 'Invert Primary Log Term',
+            'invert_secondary_log_term': 'Invert Secondary Log Term'
         }
         
         # Check if hydrogen is involved or could potentially be involved
@@ -251,6 +253,15 @@ class ParameterEditorDialog(QDialog):
                 input_field.setEnabled(hydrogen_involved)
                 # Add tooltip to explain checkbox
                 input_field.setToolTip(hydrogen_tooltip)
+            elif key in ['invert_primary_log_term', 'invert_secondary_log_term']:
+                # Create checkboxes for inversion parameters
+                input_field = QCheckBox()
+                input_field.setChecked(value in [True, 'True', 'true'])
+                # Add tooltips to explain what these do
+                if key == 'invert_primary_log_term':
+                    input_field.setToolTip("Invert the primary ion concentration ratio in the log term (vesicle/exterior instead of exterior/vesicle)")
+                else:
+                    input_field.setToolTip("Invert the secondary ion concentration ratio in the log term (exterior/vesicle instead of vesicle/exterior)")
             else:
                 # For numeric or text fields, use QLineEdit
                 input_field = QLineEdit(str(value) if value is not None else '')

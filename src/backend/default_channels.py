@@ -92,6 +92,8 @@ default_channels = {
         pH_exponent=-1.5,
         half_act_pH=5.5,
         use_free_hydrogen=True,
+        invert_primary_log_term=True,
+        invert_secondary_log_term=True,
         display_name='CLC_H'
     ),
     "nhe_h": IonChannel(
@@ -107,6 +109,8 @@ default_channels = {
         primary_exponent=1,
         secondary_exponent=1,
         use_free_hydrogen=True,
+        invert_primary_log_term=True,
+        invert_secondary_log_term=True,
         display_name='NHE_H'
     ),
     "hleak": IonChannel(

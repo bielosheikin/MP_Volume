@@ -713,7 +713,9 @@ class Simulation(Configurable, Trackable):
                     "primary_exponent",
                     "secondary_exponent",
                     "custom_nernst_constant",
-                    "use_free_hydrogen"
+                    "use_free_hydrogen",
+                    "invert_primary_log_term",
+                    "invert_secondary_log_term"
                 ]:
                     if hasattr(channel.config, attr) and attr not in channel_config:
                         channel_config[attr] = getattr(channel.config, attr)
@@ -732,7 +734,9 @@ class Simulation(Configurable, Trackable):
                 "primary_exponent",
                 "secondary_exponent",
                 "custom_nernst_constant",
-                "use_free_hydrogen"
+                "use_free_hydrogen",
+                "invert_primary_log_term",
+                "invert_secondary_log_term"
             ]:
                 if hasattr(channel, attr) and attr not in channel_config:
                     channel_config[attr] = getattr(channel, attr)

@@ -24,6 +24,8 @@ class IonChannel(Configurable, Trackable):
     secondary_exponent: int = 1
     custom_nernst_constant: Optional[float] = None
     use_free_hydrogen: bool = False
+    invert_secondary_log_term: bool = False  # New parameter to control log term structure
+    invert_primary_log_term: bool = False  # New parameter to control primary ion log term structure
     
     # Dependency-specific parameters
     voltage_exponent: Optional[float] = None
@@ -259,7 +261,10 @@ class IonChannel(Configurable, Trackable):
 
             # Start log_term with primary ion concentrations
             try:
-                log_term = exterior_primary / vesicle_primary
+                if self.invert_primary_log_term:
+                    log_term = vesicle_primary / exterior_primary
+                else:
+                    log_term = exterior_primary / vesicle_primary
             except ZeroDivisionError:
                 ion_name = self.primary_ion_species.display_name
                 raise ValueError(f"Division by zero in log term calculation for primary ion ({ion_name}). Vesicle concentration is zero.")
@@ -288,7 +293,10 @@ class IonChannel(Configurable, Trackable):
 
                 # Incorporate secondary ion concentrations into the log term
                 try:
-                    log_term *= vesicle_secondary / exterior_secondary
+                    if self.invert_secondary_log_term:
+                        log_term *= exterior_secondary / vesicle_secondary
+                    else:
+                        log_term *= vesicle_secondary / exterior_secondary
                 except ZeroDivisionError:
                     ion_name = self.secondary_ion_species.display_name
                     raise ValueError(f"Division by zero in log term calculation for secondary ion ({ion_name}). Exterior concentration is zero.")

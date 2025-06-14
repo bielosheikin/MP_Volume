@@ -157,6 +157,7 @@ class ChannelsTab(QWidget):
             'voltage_multiplier', 'nernst_multiplier', 'voltage_shift', 'flux_multiplier',
             'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
             'custom_nernst_constant', 'use_free_hydrogen',
+            'invert_primary_log_term', 'invert_secondary_log_term',
             'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
             'time_exponent', 'half_act_time'
         ]
