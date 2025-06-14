@@ -2,7 +2,7 @@ from math import exp, log
 from .trackable import Trackable
 from .flux_calculation_parameters import FluxCalculationParameters
 from ..nestconf import Configurable
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 if TYPE_CHECKING:
     from .ion_species import IonSpecies
@@ -24,8 +24,6 @@ class IonChannel(Configurable, Trackable):
     secondary_exponent: int = 1
     custom_nernst_constant: Optional[float] = None
     use_free_hydrogen: bool = False
-    invert_secondary_log_term: bool = False  # New parameter to control log term structure
-    invert_primary_log_term: bool = False  # New parameter to control primary ion log term structure
     
     # Dependency-specific parameters
     voltage_exponent: Optional[float] = None
@@ -34,6 +32,11 @@ class IonChannel(Configurable, Trackable):
     half_act_pH: Optional[float] = None
     time_exponent: Optional[float] = None
     half_act_time: Optional[float] = None
+
+    # Coupling parameters
+    is_coupled_channel: bool = False  # Whether this is a coupled (slave) channel
+    master_channel_name: Optional[str] = None  # Name of the master channel if this is coupled
+    coupled_channels: Optional[List[str]] = None  # List of coupled channel names if this is a master
 
     # Non-config fields
     TRACKABLE_FIELDS = ('flux', 'nernst_potential', 'pH_dependence', 'voltage_dependence', 'time_dependence')
@@ -235,81 +238,69 @@ class IonChannel(Configurable, Trackable):
                 )
     
     def compute_log_term(self, flux_calculation_parameters: FluxCalculationParameters):
-        try:
-            # Handle primary ion with free hydrogen dependence
-            if self.use_free_hydrogen and self.primary_ion_species.display_name == 'h':
-                # Check that free hydrogen attributes are available in flux_calculation_parameters
+        # Handle primary ion with free hydrogen dependence
+        if self.use_free_hydrogen and self.primary_ion_species.display_name == 'h':
+            # Check that free hydrogen attributes are available in flux_calculation_parameters
+            if not hasattr(flux_calculation_parameters, 'vesicle_hydrogen_free') or not hasattr(flux_calculation_parameters, 'exterior_hydrogen_free'):
+                raise ValueError("Free hydrogen concentrations are required but missing in flux_calculation_parameters.")
+        
+            # Use free hydrogen concentrations for primary ion
+            exterior_primary = flux_calculation_parameters.exterior_hydrogen_free ** self.primary_exponent
+            vesicle_primary = flux_calculation_parameters.vesicle_hydrogen_free ** self.primary_exponent
+        else:
+            # Regular concentration for primary ion
+            try:
+                exterior_primary = self.primary_ion_species.exterior_conc ** self.primary_exponent
+                vesicle_primary = self.primary_ion_species.vesicle_conc ** self.primary_exponent
+            except (ValueError, TypeError):
+                ion_name = self.primary_ion_species.display_name
+                raise ValueError(f"Math error with ion concentrations. Primary ion ({ion_name}): exterior={self.primary_ion_species.exterior_conc}, vesicle={self.primary_ion_species.vesicle_conc}, exponent={self.primary_exponent}")
+
+        # Ensure concentrations are positive
+        if exterior_primary <= 0 or vesicle_primary <= 0:
+            ion_name = self.primary_ion_species.display_name
+            raise ValueError(f"Primary ion ({ion_name}) concentrations must be positive. Got: exterior={self.primary_ion_species.exterior_conc}, vesicle={self.primary_ion_species.vesicle_conc}")
+
+        # Start log_term with primary ion concentrations
+        if vesicle_primary == 0:
+            ion_name = self.primary_ion_species.display_name
+            raise ValueError(f"Division by zero in log term calculation for primary ion ({ion_name}). Vesicle concentration is zero.")
+        
+        log_term = exterior_primary / vesicle_primary
+
+        # Handle secondary ion with free hydrogen dependence (if applicable)
+        if self.secondary_ion_species:
+            if self.use_free_hydrogen and self.secondary_ion_species.display_name == 'h':
+                # Check for free hydrogen attributes again for secondary ion use
                 if not hasattr(flux_calculation_parameters, 'vesicle_hydrogen_free') or not hasattr(flux_calculation_parameters, 'exterior_hydrogen_free'):
                     raise ValueError("Free hydrogen concentrations are required but missing in flux_calculation_parameters.")
             
-                # Use free hydrogen concentrations for primary ion
-                exterior_primary = flux_calculation_parameters.exterior_hydrogen_free ** self.primary_exponent
-                vesicle_primary = flux_calculation_parameters.vesicle_hydrogen_free ** self.primary_exponent
+                exterior_secondary = flux_calculation_parameters.exterior_hydrogen_free ** self.secondary_exponent
+                vesicle_secondary = flux_calculation_parameters.vesicle_hydrogen_free ** self.secondary_exponent
             else:
-                # Regular concentration for primary ion
                 try:
-                    exterior_primary = self.primary_ion_species.exterior_conc ** self.primary_exponent
-                    vesicle_primary = self.primary_ion_species.vesicle_conc ** self.primary_exponent
+                    exterior_secondary = self.secondary_ion_species.exterior_conc ** self.secondary_exponent
+                    vesicle_secondary = self.secondary_ion_species.vesicle_conc ** self.secondary_exponent
                 except (ValueError, TypeError):
-                    ion_name = self.primary_ion_species.display_name
-                    raise ValueError(f"Math error with ion concentrations. Primary ion ({ion_name}): exterior={self.primary_ion_species.exterior_conc}, vesicle={self.primary_ion_species.vesicle_conc}, exponent={self.primary_exponent}")
+                    ion_name = self.secondary_ion_species.display_name
+                    raise ValueError(f"Math error with ion concentrations. Secondary ion ({ion_name}): exterior={self.secondary_ion_species.exterior_conc}, vesicle={self.secondary_ion_species.vesicle_conc}, exponent={self.secondary_exponent}")
 
-            # Ensure concentrations are positive
-            if exterior_primary <= 0 or vesicle_primary <= 0:
-                ion_name = self.primary_ion_species.display_name
-                raise ValueError(f"Primary ion ({ion_name}) concentrations must be positive. Got: exterior={self.primary_ion_species.exterior_conc}, vesicle={self.primary_ion_species.vesicle_conc}")
+            # Ensure secondary concentrations are positive
+            if exterior_secondary <= 0 or vesicle_secondary <= 0:
+                ion_name = self.secondary_ion_species.display_name
+                raise ValueError(f"Secondary ion ({ion_name}) concentrations must be positive. Got: exterior={self.secondary_ion_species.exterior_conc}, vesicle={self.secondary_ion_species.vesicle_conc}")
 
-            # Start log_term with primary ion concentrations
-            try:
-                if self.invert_primary_log_term:
-                    log_term = vesicle_primary / exterior_primary
-                else:
-                    log_term = exterior_primary / vesicle_primary
-            except ZeroDivisionError:
-                ion_name = self.primary_ion_species.display_name
-                raise ValueError(f"Division by zero in log term calculation for primary ion ({ion_name}). Vesicle concentration is zero.")
-
-            # Handle secondary ion with free hydrogen dependence (if applicable)
-            if self.secondary_ion_species:
-                if self.use_free_hydrogen and self.secondary_ion_species.display_name == 'h':
-                    # Check for free hydrogen attributes again for secondary ion use
-                    if not hasattr(flux_calculation_parameters, 'vesicle_hydrogen_free') or not hasattr(flux_calculation_parameters, 'exterior_hydrogen_free'):
-                        raise ValueError("Free hydrogen concentrations are required but missing in flux_calculation_parameters.")
+            # Incorporate secondary ion concentrations into the log term
+            if exterior_secondary == 0:
+                ion_name = self.secondary_ion_species.display_name
+                raise ValueError(f"Division by zero in log term calculation for secondary ion ({ion_name}). Exterior concentration is zero.")
                 
-                    exterior_secondary = flux_calculation_parameters.exterior_hydrogen_free ** self.secondary_exponent
-                    vesicle_secondary = flux_calculation_parameters.vesicle_hydrogen_free ** self.secondary_exponent
-                else:
-                    try:
-                        exterior_secondary = self.secondary_ion_species.exterior_conc ** self.secondary_exponent
-                        vesicle_secondary = self.secondary_ion_species.vesicle_conc ** self.secondary_exponent
-                    except (ValueError, TypeError):
-                        ion_name = self.secondary_ion_species.display_name
-                        raise ValueError(f"Math error with ion concentrations. Secondary ion ({ion_name}): exterior={self.secondary_ion_species.exterior_conc}, vesicle={self.secondary_ion_species.vesicle_conc}, exponent={self.secondary_exponent}")
+            log_term *= vesicle_secondary / exterior_secondary
 
-                # Ensure secondary concentrations are positive
-                if exterior_secondary <= 0 or vesicle_secondary <= 0:
-                    ion_name = self.secondary_ion_species.display_name
-                    raise ValueError(f"Secondary ion ({ion_name}) concentrations must be positive. Got: exterior={self.secondary_ion_species.exterior_conc}, vesicle={self.secondary_ion_species.vesicle_conc}")
-
-                # Incorporate secondary ion concentrations into the log term
-                try:
-                    if self.invert_secondary_log_term:
-                        log_term *= exterior_secondary / vesicle_secondary
-                    else:
-                        log_term *= vesicle_secondary / exterior_secondary
-                except ZeroDivisionError:
-                    ion_name = self.secondary_ion_species.display_name
-                    raise ValueError(f"Division by zero in log term calculation for secondary ion ({ion_name}). Exterior concentration is zero.")
-
-            try:
-                return log(log_term)
-            except (ValueError, TypeError):
-                raise ValueError(f"Cannot compute logarithm of {log_term}. Log term must be positive.")
-
-        except ZeroDivisionError:
-            raise ValueError("Concentration values resulted in a division by zero in log term calculation.")
-        except ValueError as e:
-            raise ValueError(f"Error in log term calculation: {e}")
+        if log_term <= 0:
+            raise ValueError(f"Cannot compute logarithm of {log_term}. Log term must be positive.")
+            
+        return log(log_term)
 
     def compute_nernst_potential(self, flux_calculation_parameters: FluxCalculationParameters):
         """Calculate the Nernst potential based on the log term, voltage, and optionally a custom Nernst constant."""
@@ -361,3 +352,71 @@ class IonChannel(Configurable, Trackable):
 
         self.flux = flux
         return self.flux
+
+    def compute_coupled_flux(self, master_flux: float, master_channel: 'IonChannel' = None) -> float:
+        """
+        Compute flux for a coupled channel based on the master channel's flux.
+        This enforces stoichiometric coupling by using the same thermodynamic driving force.
+        
+        Args:
+            master_flux: The flux calculated by the master channel
+            master_channel: The master channel object to copy thermodynamic values from
+            
+        Returns:
+            float: The coupled flux with proper stoichiometry
+        """
+        if not self.is_coupled_channel:
+            raise ValueError(f"Channel {self.display_name} is not configured as a coupled channel")
+            
+        # For true stoichiometric coupling, we use the master's thermodynamic driving force
+        # but apply our own stoichiometric coefficient (flux_multiplier)
+        
+        if master_channel:
+            # Copy thermodynamic values from master channel
+            self.nernst_potential = master_channel.nernst_potential
+            self.pH_dependence = master_channel.pH_dependence
+            self.voltage_dependence = master_channel.voltage_dependence
+            self.time_dependence = master_channel.time_dependence
+            
+            # Calculate the base transport rate from the master flux
+            # master_flux = master.flux_multiplier * base_transport_rate
+            # So: base_transport_rate = master_flux / master.flux_multiplier
+            if master_channel.flux_multiplier != 0:
+                base_transport_rate = master_flux / master_channel.flux_multiplier
+                coupled_flux = self.flux_multiplier * base_transport_rate
+            else:
+                # If master flux multiplier is 0, coupled flux should also be 0
+                coupled_flux = 0.0
+        else:
+            # Fallback: use simple proportional relationship
+            coupled_flux = master_flux * self.flux_multiplier
+        
+        # Store the flux for tracking
+        self.flux = coupled_flux
+        
+        return coupled_flux
+
+    def sync_from_master(self, master_channel: 'IonChannel'):
+        """
+        Synchronize parameters from the master channel to this coupled channel.
+        This ensures coupled channels always match their master's configuration.
+        """
+        if not self.is_coupled_channel:
+            return
+            
+        # Parameters to sync from master (excluding coupling-specific ones)
+        sync_params = [
+            'conductance', 'channel_type', 'dependence_type', 'voltage_multiplier',
+            'nernst_multiplier', 'voltage_shift', 'allowed_primary_ion', 'allowed_secondary_ion',
+            'primary_exponent', 'secondary_exponent', 'custom_nernst_constant', 'use_free_hydrogen',
+            'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH',
+            'time_exponent', 'half_act_time'
+        ]
+        
+        # Copy parameters from master
+        for param in sync_params:
+            if hasattr(master_channel, param):
+                setattr(self, param, getattr(master_channel, param))
+        
+        # Reconfigure dependence parameters based on updated config
+        self.configure_dependence_parameters()

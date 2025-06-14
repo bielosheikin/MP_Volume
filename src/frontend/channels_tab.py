@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from ..backend.default_channels import default_channels
+from ..backend.ion_channels import IonChannel
 from ..app_settings import DEBUG_LOGGING
 
 from ..backend.ion_and_channels_link import IonChannelsLink
@@ -39,6 +40,11 @@ class ChannelsTab(QWidget):
         self.add_button = QPushButton("Add Channel")
         self.add_button.clicked.connect(self.add_channel)
         layout.addWidget(self.add_button)
+        
+        # Add button for creating coupled channels
+        self.create_coupled_button = QPushButton("Create Coupled Channel")
+        self.create_coupled_button.clicked.connect(self.create_coupled_channel)
+        layout.addWidget(self.create_coupled_button)
 
         self.setLayout(layout)
         
@@ -151,6 +157,24 @@ class ChannelsTab(QWidget):
 
     def extract_config_parameters(self, channel):
         """Extract only the configuration parameters from a channel object."""
+        # If this is a coupled channel, ensure it's synchronized with its master first
+        if hasattr(channel, 'is_coupled_channel') and channel.is_coupled_channel:
+            if hasattr(channel, 'master_channel_name') and channel.master_channel_name:
+                master_channel = default_channels.get(channel.master_channel_name)
+                if master_channel:
+                    # Create a temporary copy to avoid modifying the original
+                    temp_channel = IonChannel(display_name=channel.display_name)
+                    # Copy all attributes from the original channel
+                    for attr in dir(channel):
+                        if not attr.startswith('_') and hasattr(temp_channel, attr):
+                            try:
+                                setattr(temp_channel, attr, getattr(channel, attr))
+                            except:
+                                pass  # Skip attributes that can't be set
+                    # Synchronize the temporary channel
+                    temp_channel.sync_from_master(master_channel)
+                    channel = temp_channel  # Use the synchronized version for parameter extraction
+        
         # Define the configuration fields we want to expose to the user
         config_fields = [
             'display_name', 'conductance', 'channel_type', 'dependence_type',
@@ -158,6 +182,7 @@ class ChannelsTab(QWidget):
             'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
             'custom_nernst_constant', 'use_free_hydrogen',
             'invert_primary_log_term', 'invert_secondary_log_term',
+            'is_coupled_channel', 'master_channel_name', 'coupled_channels',  # Coupling parameters
             'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
             'time_exponent', 'half_act_time'
         ]
@@ -443,6 +468,9 @@ class ChannelsTab(QWidget):
             # Update the table to show changes
             self.update_parameters_display(row, updated_parameters)
             
+            # Synchronize coupled channels if this is a master channel
+            self.synchronize_coupled_channels(channel_name, updated_parameters)
+            
             # Print parameters for debugging
             if DEBUG_LOGGING:
                 print(f"Updated parameters for {channel_name}:")
@@ -492,6 +520,86 @@ class ChannelsTab(QWidget):
             if edit_button:
                 edit_button.setEnabled(False)
                 edit_button.setToolTip("Please select a primary ion first")
+
+    def create_coupled_channel(self):
+        """Create a coupled channel based on a selected master channel."""
+        # Get the currently selected row
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "No Selection", "Please select a master channel first.")
+            return
+            
+        # Get the master channel name
+        master_channel_name = self.table.item(current_row, 0).text() if self.table.item(current_row, 0) else ""
+        if not master_channel_name:
+            QMessageBox.warning(self, "Invalid Selection", "Selected row does not have a valid channel name.")
+            return
+            
+        # Check if this channel already has coupled channels
+        master_params = self.channel_parameters.get(master_channel_name, {})
+        if master_params.get('is_coupled_channel', False):
+            QMessageBox.warning(self, "Invalid Master", "Cannot create a coupled channel from another coupled channel. Please select a master channel.")
+            return
+            
+        # Generate a name for the coupled channel
+        coupled_channel_name = f"{master_channel_name}_coupled"
+        counter = 1
+        while coupled_channel_name in self.channel_parameters:
+            coupled_channel_name = f"{master_channel_name}_coupled_{counter}"
+            counter += 1
+            
+        # Get master channel's ion configuration
+        master_primary_combo = self.table.cellWidget(current_row, 1)
+        master_secondary_combo = self.table.cellWidget(current_row, 2)
+        
+        if not master_primary_combo:
+            QMessageBox.warning(self, "Invalid Master", "Master channel must have ion species configured.")
+            return
+            
+        master_primary_ion = master_primary_combo.currentText()
+        master_secondary_ion = master_secondary_combo.currentText() if master_secondary_combo else ""
+        
+        if not master_primary_ion:
+            QMessageBox.warning(self, "Invalid Master", "Master channel must have a primary ion species.")
+            return
+            
+        # For coupled channels, we swap primary and secondary ions
+        coupled_primary_ion = master_secondary_ion if master_secondary_ion else ""
+        coupled_secondary_ion = master_primary_ion
+        
+        if not coupled_primary_ion:
+            QMessageBox.warning(self, "Cannot Create Coupled", "Master channel must have a secondary ion to create a coupled channel.")
+            return
+            
+        # Create coupled channel parameters based on master
+        coupled_params = master_params.copy()
+        coupled_params.update({
+            'display_name': coupled_channel_name,
+            'allowed_primary_ion': coupled_primary_ion,
+            'allowed_secondary_ion': coupled_secondary_ion,
+            'is_coupled_channel': True,
+            'master_channel_name': master_channel_name,
+            'flux_multiplier': -1.0,  # Default opposite direction
+            # Swap exponents for coupled channel
+            'primary_exponent': master_params.get('secondary_exponent', 1),
+            'secondary_exponent': master_params.get('primary_exponent', 1),
+        })
+        
+        # Update master channel to reference this coupled channel
+        if 'coupled_channels' not in master_params:
+            master_params['coupled_channels'] = []
+        if isinstance(master_params['coupled_channels'], list):
+            master_params['coupled_channels'].append(coupled_channel_name)
+        else:
+            master_params['coupled_channels'] = [coupled_channel_name]
+            
+        # Add the coupled channel
+        self.add_channel_row(coupled_channel_name, coupled_primary_ion, coupled_secondary_ion, coupled_params)
+        
+        QMessageBox.information(self, "Coupled Channel Created", 
+                              f"Created coupled channel '{coupled_channel_name}' linked to '{master_channel_name}'.\n\n"
+                              f"The coupled channel will automatically maintain stoichiometric relationship with the master channel. "
+                              f"You can only modify the flux multiplier for the coupled channel.")
 
     def get_data(self):
         self.ion_channel_links.clear_links()
@@ -587,7 +695,11 @@ class ChannelsTab(QWidget):
                 'secondary_exponent': int(parameters.get('secondary_exponent', 1)) if secondary_ion else 0,
                 'custom_nernst_constant': None if parameters.get('custom_nernst_constant') in [None, 'None'] 
                                         else float(parameters['custom_nernst_constant']),
-                'use_free_hydrogen': str(parameters.get('use_free_hydrogen', False)).lower() in ['true', 't', 'yes', 'y', '1']
+                'use_free_hydrogen': str(parameters.get('use_free_hydrogen', False)).lower() in ['true', 't', 'yes', 'y', '1'],
+                # Add coupling parameters
+                'is_coupled_channel': bool(parameters.get('is_coupled_channel', False)),
+                'master_channel_name': parameters.get('master_channel_name', None),
+                'coupled_channels': parameters.get('coupled_channels', None)
             }
             
             # Add 'display_name' separately to avoid duplication
@@ -838,3 +950,36 @@ class ChannelsTab(QWidget):
         
         # Disable the add button
         self.add_button.setVisible(not read_only)
+
+    def synchronize_coupled_channels(self, channel_name, updated_parameters):
+        """Synchronize coupled channels when their master channel is updated"""
+        # Check if this channel has coupled channels (is a master)
+        if updated_parameters.get('coupled_channels'):
+            coupled_channel_names = updated_parameters['coupled_channels']
+            
+            # Parameters that should be synchronized from master to coupled channels
+            sync_params = [
+                'conductance', 'channel_type', 'dependence_type', 'voltage_multiplier',
+                'nernst_multiplier', 'voltage_shift', 'allowed_primary_ion', 'allowed_secondary_ion',
+                'primary_exponent', 'secondary_exponent', 'custom_nernst_constant', 'use_free_hydrogen',
+                'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH',
+                'time_exponent', 'half_act_time'
+            ]
+            
+            # Update each coupled channel
+            for coupled_name in coupled_channel_names:
+                if coupled_name in self.channel_parameters:
+                    coupled_params = self.channel_parameters[coupled_name]
+                    
+                    # Only update if it's actually a coupled channel
+                    if coupled_params.get('is_coupled_channel', False) and coupled_params.get('master_channel_name') == channel_name:
+                        # Sync parameters from master to coupled channel
+                        for param in sync_params:
+                            if param in updated_parameters:
+                                coupled_params[param] = updated_parameters[param]
+                        
+                        # Find the row for this coupled channel and update display
+                        for row in range(self.table.rowCount()):
+                            if self.table.item(row, 0).text() == coupled_name:
+                                self.update_parameters_display(row, coupled_params)
+                                break

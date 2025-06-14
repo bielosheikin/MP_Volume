@@ -230,11 +230,19 @@ class Simulation(Configurable, Trackable):
                     print(f"Warning: Channel '{channel_name}' not found for linking")
                     continue  # Skip if channel doesn't exist
                 channel = self.channels[channel_name]
+                
+                # Connect all channels (including coupled ones) to their ion species
+                # The coupling logic in compute_total_flux will handle them appropriately
                 secondary_species = self.species.get(secondary_species_name)
                 try:
                     primary_species.connect_channel(channel=channel, secondary_species=secondary_species)
                     # Register each channel in HistoriesStorage
                     self.histories.register_object(channel)
+                    
+                    # Log coupled channel connections for debugging
+                    if hasattr(channel, 'is_coupled_channel') and channel.is_coupled_channel:
+                        print(f"Connected coupled channel '{channel_name}' to species '{species_name}' - will use coupling logic")
+                    
                 except Exception as e:
                     raise ValueError(f"Error connecting channel '{channel_name}' to species '{species_name}': {str(e)}")
 
@@ -262,6 +270,13 @@ class Simulation(Configurable, Trackable):
         flux_calculation_parameters.area = self.vesicle.area
         flux_calculation_parameters.time = self.time
         flux_calculation_parameters.nernst_constant = self.nernst_constant
+        
+        # Add all channels from all species for coupled channel lookup
+        all_channels = {}
+        for species in self.all_species:
+            for channel in species.channels:
+                all_channels[channel.display_name] = channel
+        flux_calculation_parameters.all_channels = all_channels
     
         # Locate hydrogen species if available
         hydrogen_species = next((s for s in self.all_species if s.display_name == 'h'), None)
@@ -715,7 +730,10 @@ class Simulation(Configurable, Trackable):
                     "custom_nernst_constant",
                     "use_free_hydrogen",
                     "invert_primary_log_term",
-                    "invert_secondary_log_term"
+                    "invert_secondary_log_term",
+                    "is_coupled_channel",
+                    "master_channel_name",
+                    "coupled_channels"
                 ]:
                     if hasattr(channel.config, attr) and attr not in channel_config:
                         channel_config[attr] = getattr(channel.config, attr)
@@ -736,7 +754,10 @@ class Simulation(Configurable, Trackable):
                 "custom_nernst_constant",
                 "use_free_hydrogen",
                 "invert_primary_log_term",
-                "invert_secondary_log_term"
+                "invert_secondary_log_term",
+                "is_coupled_channel",
+                "master_channel_name",
+                "coupled_channels"
             ]:
                 if hasattr(channel, attr) and attr not in channel_config:
                     channel_config[attr] = getattr(channel, attr)

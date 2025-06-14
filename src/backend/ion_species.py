@@ -54,9 +54,60 @@ class IonSpecies(Configurable, Trackable):
                            ):
         """Compute the total flux across all connected channels."""
         total_flux = 0.0
+        
+        # Get access to all channels across all species through the global registry
+        # This is needed because master and coupled channels may be in different ion species
+        all_channels = {}
+        master_fluxes = {}
+        
+        # Build a registry of all channels from the simulation
+        # We can access this through the flux_calculation_parameters if we add it
+        if hasattr(flux_calculation_parameters, 'all_channels'):
+            all_channels = flux_calculation_parameters.all_channels
+        else:
+            # Fallback: build from current species only (old behavior)
+            for channel in self.channels:
+                all_channels[channel.display_name] = channel
+        
+        # First pass: Calculate fluxes for master channels and independent channels
         for channel in self.channels:
-            flux = channel.compute_flux(flux_calculation_parameters)
-            total_flux += flux
+            if not channel.is_coupled_channel:
+                # This is either a master channel or an independent channel
+                flux = channel.compute_flux(flux_calculation_parameters)
+                total_flux += flux
+                
+                # If this is a master channel, store its flux for coupled channels
+                if hasattr(channel, 'coupled_channels') and channel.coupled_channels:
+                    master_fluxes[channel.display_name] = flux
+        
+        # Second pass: Calculate fluxes for coupled channels
+        for channel in self.channels:
+            if channel.is_coupled_channel:
+                # Find the master channel flux
+                master_name = channel.master_channel_name
+                if master_name in master_fluxes:
+                    # Master channel flux was calculated in this species
+                    master_channel = all_channels.get(master_name)
+                    flux = channel.compute_coupled_flux(master_fluxes[master_name], master_channel)
+                    total_flux += flux
+                elif master_name in all_channels:
+                    # Master channel exists but flux not calculated yet - get it from the master channel
+                    master_channel = all_channels[master_name]
+                    if hasattr(master_channel, 'flux') and master_channel.flux is not None:
+                        # Use the already calculated flux
+                        flux = channel.compute_coupled_flux(master_channel.flux, master_channel)
+                        total_flux += flux
+                    else:
+                        # Master channel flux not available - this shouldn't happen in normal operation
+                        print(f"Warning: Master channel '{master_name}' flux not available for coupled channel '{channel.display_name}'")
+                        flux = channel.compute_flux(flux_calculation_parameters)
+                        total_flux += flux
+                else:
+                    # Master channel not found - treat as independent (fallback)
+                    print(f"Warning: Master channel '{master_name}' not found for coupled channel '{channel.display_name}'")
+                    flux = channel.compute_flux(flux_calculation_parameters)
+                    total_flux += flux
+        
         return total_flux
 
     def _validate_channel_compatibility(self, 

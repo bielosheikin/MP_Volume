@@ -65,6 +65,10 @@ class ParameterEditorDialog(QDialog):
         self.primary_ion = primary_ion
         self.secondary_ion = secondary_ion
         
+        # Check if this is a coupled channel
+        self.is_coupled_channel = parameters.get('is_coupled_channel', False)
+        self.master_channel_name = parameters.get('master_channel_name', '')
+        
         # Flag to track if signals are being connected to prevent double connections
         self._signals_connected = False
 
@@ -81,6 +85,15 @@ class ParameterEditorDialog(QDialog):
         info_label = QLabel("Edit channel parameters. Channels with non-zero conductance will affect ion movement during simulation.")
         info_label.setWordWrap(True)
         self.form_layout.addWidget(info_label)
+        
+        # Add special warning for coupled channels
+        if self.is_coupled_channel:
+            coupled_info_label = QLabel(f"⚠️ This is a coupled channel linked to '{self.master_channel_name}'. "
+                                      f"Most parameters are synchronized with the master channel. "
+                                      f"You can only modify the flux multiplier.")
+            coupled_info_label.setWordWrap(True)
+            coupled_info_label.setStyleSheet("color: #ff6600; font-weight: bold; background-color: #fff3cd; padding: 8px; border: 1px solid #ffeaa7; border-radius: 4px;")
+            self.form_layout.addWidget(coupled_info_label)
         
         self.params_form_layout = QFormLayout()
         self.form_layout.addLayout(self.params_form_layout)
@@ -142,9 +155,7 @@ class ParameterEditorDialog(QDialog):
             'pH_exponent': 'pH Exponent',
             'half_act_pH': 'Half Activation pH',
             'time_exponent': 'Time Exponent',
-            'half_act_time': 'Half Activation Time',
-            'invert_primary_log_term': 'Invert Primary Log Term',
-            'invert_secondary_log_term': 'Invert Secondary Log Term'
+            'half_act_time': 'Half Activation Time'
         }
         
         # Check if hydrogen is involved or could potentially be involved
@@ -190,6 +201,12 @@ class ParameterEditorDialog(QDialog):
         self.params_form_layout.addRow(friendly_param_names.get('dependence_type', 'Dependency'), self.dependence_type_input)
         self.inputs['dependence_type'] = self.dependence_type_input
         
+        # Disable dependency controls for coupled channels
+        if self.is_coupled_channel:
+            self.dependence_type_input.setEnabled(False)
+            self.dependence_type_input.setToolTip(f"Dependency type is controlled by the master channel '{self.master_channel_name}'")
+            self.dependence_type_input.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+        
         # Create channel type dropdown
         self.channel_type_widget = QWidget()
         self.channel_type_layout = QFormLayout(self.channel_type_widget)
@@ -213,6 +230,12 @@ class ParameterEditorDialog(QDialog):
         self.channel_type_layout.addRow(friendly_param_names.get('channel_type', 'Channel Type'), self.channel_type_input)
         self.dependency_layout.addWidget(self.channel_type_widget)
         self.inputs['channel_type'] = self.channel_type_input
+        
+        # Disable channel type for coupled channels
+        if self.is_coupled_channel:
+            self.channel_type_input.setEnabled(False)
+            self.channel_type_input.setToolTip(f"Channel type is controlled by the master channel '{self.master_channel_name}'")
+            self.channel_type_input.setStyleSheet("background-color: #f0f0f0; color: #666666;")
         
         # We'll connect signals later to avoid multiple connections
         
@@ -241,6 +264,10 @@ class ParameterEditorDialog(QDialog):
             # Skip hidden parameters and dependency-specific parameters that will be handled separately
             if key in hidden_params or key in dependency_params:
                 continue
+            
+            # Skip invert parameters as they are now redundant with proper coupling
+            if key in ['invert_primary_log_term', 'invert_secondary_log_term']:
+                continue
                 
             # Use friendly parameter name for display
             display_name = friendly_param_names.get(key, key)
@@ -253,15 +280,12 @@ class ParameterEditorDialog(QDialog):
                 input_field.setEnabled(hydrogen_involved)
                 # Add tooltip to explain checkbox
                 input_field.setToolTip(hydrogen_tooltip)
-            elif key in ['invert_primary_log_term', 'invert_secondary_log_term']:
-                # Create checkboxes for inversion parameters
-                input_field = QCheckBox()
-                input_field.setChecked(value in [True, 'True', 'true'])
-                # Add tooltips to explain what these do
-                if key == 'invert_primary_log_term':
-                    input_field.setToolTip("Invert the primary ion concentration ratio in the log term (vesicle/exterior instead of exterior/vesicle)")
-                else:
-                    input_field.setToolTip("Invert the secondary ion concentration ratio in the log term (exterior/vesicle instead of vesicle/exterior)")
+                
+                # Disable for coupled channels since it should be controlled by master
+                if self.is_coupled_channel:
+                    input_field.setEnabled(False)
+                    input_field.setToolTip(f"This parameter is controlled by the master channel '{self.master_channel_name}'")
+                    input_field.setStyleSheet("color: #666666;")  # Grayed out appearance
             else:
                 # For numeric or text fields, use QLineEdit
                 input_field = QLineEdit(str(value) if value is not None else '')
@@ -289,6 +313,13 @@ class ParameterEditorDialog(QDialog):
                     input_field.setEnabled(False)
                     input_field.setToolTip("No secondary ion is set for this channel")
                     input_field.setText('0')  # Set to 0 if no secondary ion
+                    
+                # For coupled channels, disable all fields except flux_multiplier
+                if self.is_coupled_channel and key != 'flux_multiplier':
+                    input_field.setEnabled(False)
+                    input_field.setToolTip(f"This parameter is controlled by the master channel '{self.master_channel_name}'")
+                    if isinstance(input_field, QLineEdit):
+                        input_field.setStyleSheet("background-color: #f0f0f0; color: #666666;")  # Grayed out appearance
 
             self.inputs[key] = input_field
             self.params_form_layout.addRow(display_name, input_field)
@@ -478,6 +509,13 @@ class ParameterEditorDialog(QDialog):
         for input_widget in new_inputs.values():
             input_widget.textChanged.connect(self.update_equations)
         
+        # Disable dependency parameter inputs for coupled channels
+        if self.is_coupled_channel:
+            for key, input_widget in new_inputs.items():
+                input_widget.setEnabled(False)
+                input_widget.setToolTip(f"This parameter is controlled by the master channel '{self.master_channel_name}'")
+                input_widget.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+        
         # Update equations to reflect the new dependency settings
         self.update_equations()
 
@@ -494,6 +532,52 @@ class ParameterEditorDialog(QDialog):
         
         # Get current values of parameters
         current_params = self.get_current_parameters()
+        
+        # For coupled channels, we need to use the master channel's parameters for equations
+        # since they share the same thermodynamic driving force
+        equation_params = current_params.copy()
+        equation_primary_ion = self.primary_ion
+        equation_secondary_ion = self.secondary_ion
+        
+        if self.is_coupled_channel and self.master_channel_name:
+            # Import here to avoid circular imports
+            from ...backend.default_channels import default_channels
+            
+            # Get master channel parameters
+            if self.master_channel_name in default_channels:
+                master_channel = default_channels[self.master_channel_name]
+                
+                # Extract master channel parameters for equation generation
+                master_params = {}
+                config_fields = [
+                    'conductance', 'channel_type', 'dependence_type',
+                    'voltage_multiplier', 'nernst_multiplier', 'voltage_shift', 'flux_multiplier',
+                    'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
+                    'custom_nernst_constant', 'use_free_hydrogen',
+                    'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
+                    'time_exponent', 'half_act_time'
+                ]
+                
+                for field in config_fields:
+                    if hasattr(master_channel, field):
+                        master_params[field] = getattr(master_channel, field)
+                
+                # Use master channel parameters for equation generation
+                equation_params = master_params
+                equation_primary_ion = master_params.get('allowed_primary_ion')
+                equation_secondary_ion = master_params.get('allowed_secondary_ion')
+        
+        # Add special note for coupled channels
+        if self.is_coupled_channel:
+            coupling_note = f"""
+            <div style='background-color: #e8f4fd; border: 1px solid #bee5eb; border-radius: 4px; padding: 8px; margin-bottom: 10px;'>
+                <b>ℹ️ Coupled Channel Note:</b><br>
+                This channel is coupled to <b>{self.master_channel_name}</b> and uses the same thermodynamic driving force.
+                The equations shown below represent the master channel's thermodynamics.
+                Only the flux multiplier differs to enforce stoichiometric coupling.
+            </div>
+            """
+            self.equation_display.add_equation("Coupling Information", coupling_note)
         
         # Add parameter descriptions
         param_descriptions = EquationGenerator.parameter_descriptions()
@@ -512,17 +596,17 @@ class ParameterEditorDialog(QDialog):
                 
         param_info_html += "</ul>"
         
-        # Add equations
+        # Add equations using the appropriate parameters (master's for coupled channels)
         nernst_eq = EquationGenerator.nernst_potential_equation(
-            current_params, 
-            self.primary_ion, 
-            self.secondary_ion
+            equation_params, 
+            equation_primary_ion, 
+            equation_secondary_ion
         )
         
         flux_eq = EquationGenerator.flux_equation(
-            current_params, 
-            self.primary_ion, 
-            self.secondary_ion
+            equation_params, 
+            equation_primary_ion, 
+            equation_secondary_ion
         )
         
         # Add equations to display
@@ -739,3 +823,53 @@ class ParameterEditorDialog(QDialog):
     def get_parameters(self):
         """Return the modified parameters"""
         return self.parameters
+
+    def apply_changes(self):
+        """Apply changes and close the dialog"""
+        # Collect all parameter values from the form
+        for key, input_field in self.inputs.items():
+            if isinstance(input_field, QLineEdit):
+                text = input_field.text().strip()
+                if text:
+                    try:
+                        # Try to convert to appropriate type
+                        if key in ['conductance', 'voltage_multiplier', 'nernst_multiplier', 'voltage_shift', 'flux_multiplier',
+                                  'custom_nernst_constant', 'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH',
+                                  'time_exponent', 'half_act_time']:
+                            self.parameters[key] = float(text)
+                        elif key in ['primary_exponent', 'secondary_exponent']:
+                            self.parameters[key] = int(text)
+                        else:
+                            self.parameters[key] = text
+                    except ValueError:
+                        # Keep original value if conversion fails
+                        pass
+                else:
+                    # Empty field - set to None for optional parameters
+                    if key in ['custom_nernst_constant', 'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH',
+                              'time_exponent', 'half_act_time']:
+                        self.parameters[key] = None
+            elif isinstance(input_field, QComboBox):
+                current_text = input_field.currentText()
+                if current_text and current_text != "None":
+                    self.parameters[key] = current_text
+                else:
+                    self.parameters[key] = None
+            elif isinstance(input_field, QCheckBox):
+                self.parameters[key] = input_field.isChecked()
+        
+        self.accept()
+        
+    def refresh_coupled_channel_display(self):
+        """Refresh the display for coupled channels to show synchronized values"""
+        if self.is_coupled_channel:
+            # Re-populate the form with current values
+            for key, input_field in self.inputs.items():
+                if hasattr(self, key):
+                    current_value = getattr(self, key)
+                    if isinstance(input_field, QLineEdit):
+                        input_field.setText(str(current_value) if current_value is not None else "")
+                    elif isinstance(input_field, QComboBox):
+                        index = input_field.findText(str(current_value))
+                        if index >= 0:
+                            input_field.setCurrentIndex(index)
