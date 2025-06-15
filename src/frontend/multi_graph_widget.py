@@ -84,6 +84,17 @@ class GraphWidget(QWidget):
         self.canvas = FigureCanvas(self.figure)
         # Make the canvas have fixed height to ensure consistent sizing
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        # BUGFIX: Override the setFixedHeight method to validate heights
+        original_setFixedHeight = self.canvas.setFixedHeight
+        def safe_setFixedHeight(height):
+            # Validate height before setting
+            if height <= 0 or height > 5000:  # 5000 pixels is a reasonable maximum
+                print(f"Warning: Attempted to set invalid canvas height: {height}, using default 600")
+                height = 600  # Use safe default
+            original_setFixedHeight(height)
+        
+        self.canvas.setFixedHeight = safe_setFixedHeight
         self.canvas.setFixedHeight(self.CANVAS_HEIGHT)  # Fixed height instead of minimum
         self.axes = self.figure.add_subplot(111)
         self.frame_layout.addWidget(self.canvas, 1)
@@ -294,9 +305,84 @@ class GraphWidget(QWidget):
         # If we didn't find a parent to handle it directly, clear the flag
         self._direct_export_handled = False
     
+    def _validate_and_fix_figure_size(self):
+        """Validate and fix the matplotlib figure size if it's corrupted"""
+        try:
+            # Get current figure size
+            current_width, current_height = self.figure.get_size_inches()
+            
+            # Check for corrupted values (negative, zero, or extremely large)
+            max_reasonable_size = 50  # 50 inches is very large but reasonable
+            
+            if (current_width <= 0 or current_height <= 0 or 
+                current_width > max_reasonable_size or current_height > max_reasonable_size):
+                
+                print(f"Warning: Corrupted figure size detected: {current_width}x{current_height} inches")
+                print("Resetting figure to safe dimensions...")
+                
+                # AGGRESSIVE FIX: Completely recreate the figure with safe dimensions
+                # Save current plot data
+                lines_data = []
+                for line in self.axes.lines:
+                    lines_data.append({
+                        'xdata': line.get_xdata(),
+                        'ydata': line.get_ydata(),
+                        'color': line.get_color(),
+                        'linestyle': line.get_linestyle(),
+                        'marker': line.get_marker(),
+                        'label': line.get_label()
+                    })
+                
+                # Save axis labels and title
+                xlabel = self.axes.get_xlabel()
+                ylabel = self.axes.get_ylabel()
+                title = self.axes.get_title()
+                
+                # Clear and recreate figure
+                self.figure.clear()
+                self.figure.set_size_inches(8, 6)  # Safe default size
+                self.axes = self.figure.add_subplot(111)
+                
+                # Restore plot data
+                for line_data in lines_data:
+                    self.axes.plot(line_data['xdata'], line_data['ydata'],
+                                 color=line_data['color'],
+                                 linestyle=line_data['linestyle'],
+                                 marker=line_data['marker'],
+                                 label=line_data['label'])
+                
+                # Restore labels and title
+                self.axes.set_xlabel(xlabel)
+                self.axes.set_ylabel(ylabel)
+                self.axes.set_title(title)
+                self.axes.grid(True, linestyle='--', alpha=0.7)
+                
+                # Add legend if we have labels
+                if any(line_data['label'] for line_data in lines_data):
+                    self.axes.legend()
+                
+                # Force canvas to redraw with correct size
+                self.canvas.draw()
+                
+                return True  # Indicates we fixed the size
+            
+            return False  # Size was already OK
+            
+        except Exception as e:
+            print(f"Error checking figure size: {e}")
+            # If we can't check the size, reset to safe default
+            try:
+                self.figure.clear()
+                self.figure.set_size_inches(8, 6)
+                self.axes = self.figure.add_subplot(111)
+                self.canvas.draw()
+                return True
+            except:
+                return False
+    
     def _request_download_png(self):
-        """Handle request to download graph as PNG"""
-        # Emit the signal first
+        """Save the current plot as a PNG file"""
+        # Emit signal to indicate PNG download was requested
         self.download_png_requested.emit(self)
         
         # Get the selected variables for the filename
@@ -323,13 +409,65 @@ class GraphWidget(QWidget):
         if not file_path.lower().endswith('.png'):
             file_path += '.png'
             
-        # Save the figure
+        # COMPLETE REWRITE: Create a fresh figure for export to avoid any corruption
         try:
-            # Apply tight layout to make sure everything fits
-            self.figure.tight_layout()
-            self.figure.savefig(file_path, format='png', dpi=300, bbox_inches='tight')
+            print("Creating fresh figure for PNG export...")
+            
+            # Create a completely new figure with safe dimensions
+            from matplotlib.figure import Figure
+            export_figure = Figure(figsize=(10, 8), dpi=100)  # Safe, reasonable size
+            export_axes = export_figure.add_subplot(111)
+            
+            # Copy all plot data from the original axes
+            for line in self.axes.lines:
+                export_axes.plot(line.get_xdata(), line.get_ydata(),
+                               color=line.get_color(),
+                               linestyle=line.get_linestyle(),
+                               marker=line.get_marker(),
+                               label=line.get_label(),
+                               linewidth=line.get_linewidth(),
+                               markersize=line.get_markersize())
+            
+            # Copy axis labels and title
+            export_axes.set_xlabel(self.axes.get_xlabel())
+            export_axes.set_ylabel(self.axes.get_ylabel())
+            export_axes.set_title(self.axes.get_title())
+            export_axes.grid(True, linestyle='--', alpha=0.7)
+            
+            # Add legend if original has one
+            if self.axes.get_legend() is not None:
+                export_axes.legend()
+            
+            # Set the same axis limits as original
+            export_axes.set_xlim(self.axes.get_xlim())
+            export_axes.set_ylim(self.axes.get_ylim())
+            
+            # Apply tight layout
+            export_figure.tight_layout()
+            
+            # Save with safe parameters
+            export_figure.savefig(file_path, format='png', dpi=300, bbox_inches='tight')
+            
+            print(f"PNG saved successfully using fresh figure: {file_path}")
+            
+            # Clean up the temporary figure
+            import matplotlib.pyplot as plt
+            plt.close(export_figure)
+            
         except Exception as e:
-            print(f"Error saving PNG: {str(e)}")
+            print(f"Error saving PNG with fresh figure: {str(e)}")
+            # Fallback to lower DPI
+            try:
+                print("Attempting to save with lower DPI...")
+                export_figure.savefig(file_path, format='png', dpi=150, bbox_inches='tight')
+                print(f"PNG saved successfully with reduced DPI: {file_path}")
+                import matplotlib.pyplot as plt
+                plt.close(export_figure)
+            except Exception as e2:
+                print(f"Failed to save PNG even with reduced DPI: {str(e2)}")
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "PNG Export Error", 
+                                  f"Failed to save PNG file:\n{str(e)}\n\nThe plot data may be corrupted. Try plotting the graph again.")
     
     def clear_plot(self):
         """Clear the plot"""
@@ -407,6 +545,12 @@ class MultiGraphWidget(QWidget):
         window_width = self.width()
         window_height = self.height()
         
+        # BUGFIX: Add validation to prevent corrupted height values
+        # If scroll_height is negative, zero, or unreasonably large, use default values
+        if scroll_height <= 0 or scroll_height > 50000:  # 50000 is a reasonable maximum
+            print(f"Warning: Invalid scroll_height detected ({scroll_height}), using default height")
+            scroll_height = 800  # Use a reasonable default
+        
         # Determine if we're in fullscreen mode - larger windows should get larger graphs
         is_large_window = scroll_height > 700 and window_width > 1200
         
@@ -426,10 +570,34 @@ class MultiGraphWidget(QWidget):
             # Standard spacing for normal mode
             self.graphs_layout.setSpacing(20)
         
+        # BUGFIX: Add additional validation for calculated heights
+        # Ensure heights are within reasonable bounds
+        ideal_graph_height = max(300, min(2000, ideal_graph_height))  # Clamp between 300-2000 pixels
+        ideal_canvas_height = max(200, min(1800, ideal_canvas_height))  # Clamp between 200-1800 pixels
+        
         # Update all graphs to use this height
         for graph in self.graphs:
-            graph.setFixedHeight(int(ideal_graph_height))
-            graph.canvas.setFixedHeight(int(ideal_canvas_height))
+            # ADDITIONAL BUGFIX: Add per-graph validation before setting heights
+            safe_graph_height = max(300, min(1500, int(ideal_graph_height)))
+            safe_canvas_height = max(200, min(1200, int(ideal_canvas_height)))
+            
+            print(f"Setting graph height to {safe_graph_height}, canvas height to {safe_canvas_height}")
+            
+            graph.setFixedHeight(safe_graph_height)
+            # Use the safe override method for canvas height
+            if hasattr(graph.canvas, 'setFixedHeight'):
+                try:
+                    graph.canvas.setFixedHeight(safe_canvas_height)
+                    # Also ensure the figure size stays reasonable
+                    if hasattr(graph, 'figure'):
+                        current_w, current_h = graph.figure.get_size_inches()
+                        if current_h > 20:  # If height is more than 20 inches, reset
+                            print(f"Resetting figure size from {current_w}x{current_h} to 8x6")
+                            graph.figure.set_size_inches(8, 6)
+                except Exception as e:
+                    print(f"Error setting canvas height: {e}")
+                    # Use default safe height
+                    graph.canvas.setFixedHeight(600)
         
         # After resize, update layouts to ensure correct scrolling
         self.graphs_container.updateGeometry()
@@ -442,6 +610,11 @@ class MultiGraphWidget(QWidget):
         
         # Add margin to total height
         total_height += self.graphs_layout.contentsMargins().top() + self.graphs_layout.contentsMargins().bottom()
+        
+        # BUGFIX: Validate total_height before setting
+        if total_height > 100000:  # Prevent extremely large container heights
+            print(f"Warning: Calculated total_height ({total_height}) is too large, using default")
+            total_height = len(self.graphs) * 800 + 100  # Use reasonable default
         
         # Update container minimum height
         self.graphs_container.setMinimumHeight(total_height)
