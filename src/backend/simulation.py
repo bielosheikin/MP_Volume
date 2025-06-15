@@ -34,7 +34,7 @@ class Simulation(Configurable, Trackable):
     exterior_params: Optional[Dict[str, Any]] = None
     
     # Non-config fields
-    TRACKABLE_FIELDS = ('buffer_capacity', 'time')
+    TRACKABLE_FIELDS = ('buffer_capacity', 'time', 'unaccounted_ion_conc')
 
     def __init__(self, simulations_path=None, stored_hash=None, display_name='simulation', **kwargs):
         # Initialize both parent classes with their required parameters
@@ -295,6 +295,17 @@ class Simulation(Configurable, Trackable):
         self.unaccounted_ion_amounts = ((self.vesicle.init_charge / FARADAY_CONSTANT) - 
                 (sum(ion.elementary_charge * ion.init_vesicle_conc for ion in self.all_species)) * 1000 * self.vesicle.init_volume)
     
+    @property
+    def unaccounted_ion_conc(self):
+        """Calculate unaccounted ion concentration by dividing unaccounted amount by vesicle volume."""
+        if self.unaccounted_ion_amounts is None or self.vesicle is None:
+            return 0.0
+        
+        # Convert from amount to concentration (mol/L)
+        # unaccounted_ion_amounts is in moles, vesicle.volume is in m³
+        # To get mol/L, we need to divide by volume in liters (volume_m3 * 1000)
+        return self.unaccounted_ion_amounts / (1000 * self.vesicle.volume)
+
     def update_volume(self):
         # Calculate the sum of current amounts (excluding hydrogen)
         current_amounts_sum = sum(ion.vesicle_amount for ion in self.all_species if ion.display_name != 'h')

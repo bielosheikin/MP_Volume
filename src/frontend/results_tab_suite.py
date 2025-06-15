@@ -123,7 +123,7 @@ class ResultsTabSuite(QWidget):
         
         # Export plots template button
         export_template_button = QPushButton("Export Plots Template")
-        export_template_button.setToolTip("Export standard plots for pH, voltage, flux and channel dependencies")
+        export_template_button.setToolTip("Export 3x3 grid template: pH/voltage/volume, Cl/Na/K concentrations, and channel fluxes")
         export_template_button.clicked.connect(self.export_plots_template)
         export_options_layout.addWidget(export_template_button)
         
@@ -455,7 +455,7 @@ class ResultsTabSuite(QWidget):
         
         Args:
             sim_hash: Hash of the simulation
-            var_name: Name of the variable to load
+            var_name: Name of the variable to load (may be normalized)
             current_graph: The graph that's currently being updated (optional)
         """
         if sim_hash not in self.simulation_data:
@@ -463,12 +463,36 @@ class ResultsTabSuite(QWidget):
             
         sim_data = self.simulation_data[sim_hash]
         
-        # Check if we already have this data loaded
-        if var_name in sim_data['data']:
-            return sim_data['data'][var_name]
+        # Handle normalized variable names by finding the actual variable name in this simulation
+        actual_var_name = var_name
+        available_histories = sim_data.get('available_histories', [])
+        
+        # Map normalized names back to simulation-specific names
+        if var_name == 'time':
+            # Look for simulation-specific time variable (e.g., cl_1_time)
+            for hist_var in available_histories:
+                if hist_var.endswith('_time') and hist_var != 'simulation_time':
+                    actual_var_name = hist_var
+                    break
+        elif var_name == 'buffer_capacity':
+            # Look for simulation-specific buffer_capacity variable (e.g., cl_1_buffer_capacity)
+            for hist_var in available_histories:
+                if hist_var.endswith('_buffer_capacity'):
+                    actual_var_name = hist_var
+                    break
+        elif var_name == 'unaccounted_ion_conc':
+            # Look for simulation-specific unaccounted_ion_conc variable (e.g., cl_1_unaccounted_ion_conc)
+            for hist_var in available_histories:
+                if hist_var.endswith('_unaccounted_ion_conc'):
+                    actual_var_name = hist_var
+                    break
+        
+        # Check if we already have this data loaded (using actual variable name)
+        if actual_var_name in sim_data['data']:
+            return sim_data['data'][actual_var_name]
             
-        # Check if this variable is available
-        if var_name not in sim_data.get('available_histories', []):
+        # Check if this variable is available (using actual variable name)
+        if actual_var_name not in available_histories:
             return None
         
         # Optimization: Only show loading message for large datasets
@@ -484,10 +508,10 @@ class ResultsTabSuite(QWidget):
                 # Process events immediately to show loading message
                 QApplication.processEvents()
             
-        # Load the variable data
+        # Load the variable data (using actual variable name)
         try:
             histories_dir = sim_data['histories_dir']
-            history_file = os.path.join(histories_dir, f"{var_name}.npy")
+            history_file = os.path.join(histories_dir, f"{actual_var_name}.npy")
             
             if os.path.exists(history_file):
                 data = np.load(history_file)
@@ -500,11 +524,11 @@ class ResultsTabSuite(QWidget):
                     # Sample the data
                     data = data[::sample_rate]
                 
-                # Store in cache for faster access next time
-                sim_data['data'][var_name] = data
+                # Store in cache for faster access next time (using actual variable name)
+                sim_data['data'][actual_var_name] = data
                 return data
         except Exception as e:
-            debug_print(f"Error loading {var_name} for {sim_data['display_name']}: {str(e)}")
+            debug_print(f"Error loading {actual_var_name} for {sim_data['display_name']}: {str(e)}")
             
         return None
     
@@ -526,8 +550,22 @@ class ResultsTabSuite(QWidget):
                 if 'time' in sim_data['data']:
                     available_vars.add('time')
                 
-                # Add all variables from this simulation (union)
-                available_variables |= available_vars
+                # Normalize simulation-specific variable names to general names
+                normalized_vars = set()
+                for var_name in available_vars:
+                    # Check for simulation-specific variables and normalize them
+                    if var_name.endswith('_time') and var_name != 'simulation_time':
+                        normalized_vars.add('time')
+                    elif var_name.endswith('_buffer_capacity'):
+                        normalized_vars.add('buffer_capacity')
+                    elif var_name.endswith('_unaccounted_ion_conc'):
+                        normalized_vars.add('unaccounted_ion_conc')
+                    else:
+                        # Keep the original variable name for non-simulation-specific variables
+                        normalized_vars.add(var_name)
+                
+                # Add normalized variables from this simulation (union)
+                available_variables |= normalized_vars
         
         # If we don't have any variables, show a message
         if not available_variables:
@@ -763,6 +801,9 @@ class ResultsTabSuite(QWidget):
                 if app_settings.DEBUG_LOGGING:
                     debug_print("DEBUG: Graph axes not available, skipping plot")
                 return
+            
+            # Clear the axes to remove any loading messages or previous plots
+            graph.axes.clear()
             
             # If we have data, set labels and title
             if all_plot_data:
@@ -2256,10 +2297,11 @@ class ResultsTabSuite(QWidget):
     def export_plots_template(self):
         """Export predefined plot templates for all selected simulations
         
-        Creates the following plot blocks for all selected simulations:
-        1. pH, voltage, volume and charge with time (2x2 grid)
-        2. Each channel flux with time
-        3. Each channel's dependency functions
+        Creates a 3x3 grid of plots for all selected simulations:
+        Row 1: pH, voltage, volume
+        Row 2: Cl concentration, Na concentration, K concentration
+        Row 3: ASOR flux, TPC flux, CLC flux
+        Note: NHE and V-ATPase fluxes are included but may exceed 3x3 if both are present
         """
         if not self.selected_simulations:
             debug_print("No simulations selected for export")
@@ -2302,16 +2344,10 @@ class ResultsTabSuite(QWidget):
                 ref_sim_data = self.simulation_data[ref_sim_hash]
                 ref_display_name = ref_sim_data.get('display_name', f"Sim_{ref_sim_hash[:8]}")
                 
-                # Create multi-simulation plots - one of each type
+                # Create the new 3x3 template plot
+                self._create_template_3x3_plot(pdf, ref_sim_hash, "Multiple Simulations")
                 
-                # Plot 1: pH, voltage, volume and charge with time (2x2 grid)
-                self._create_ph_voltage_time_plot(pdf, ref_sim_hash, "Multiple Simulations")
-                
-                # Plot 2: Each channel flux with time 
-                self._create_flux_time_plots(pdf, ref_sim_hash, "Multiple Simulations")
-                
-                # Plot 3: Channel dependency functions
-                # These need to be done separately for each simulation since dependencies are simulation-specific
+                # Also create channel dependency plots for each simulation
                 for sim_hash in self.selected_simulations:
                     if sim_hash not in self.simulation_data:
                         continue
@@ -2330,13 +2366,293 @@ class ResultsTabSuite(QWidget):
                 # Set PDF metadata
                 d = pdf.infodict()
                 d['Title'] = 'Simulation Template Plots'
-                d['Subject'] = 'Standard plots for all simulations'
+                d['Subject'] = 'Standard 3x3 grid plots for all simulations'
         
         except Exception as e:
             debug_print(f"Error exporting template plots: {str(e)}")
             import traceback
             traceback.print_exc()
+
+    def _create_template_3x3_plot(self, pdf, sim_hash, display_name):
+        """Create a 3x3 grid of plots with the specified layout"""
+        sim_data = self.simulation_data[sim_hash]
+        available_histories = sim_data.get('available_histories', [])
+        
+        # Check if we have required data
+        if 'simulation_time' not in available_histories:
+            return
+        
+        # Find the unaccounted ion concentration variable (it could have different prefixes)
+        unaccounted_ion_var = None
+        for var_name in available_histories:
+            if var_name.endswith('_unaccounted_ion_conc'):
+                unaccounted_ion_var = var_name
+                break
+        
+        # Define the plot configuration for the 3x3 grid
+        plots_config = [
+            # Row 1: pH, voltage, volume
+            {'var': 'Vesicle_pH', 'title': 'pH vs Time', 'position': (0, 0), 'ylabel': 'pH'},
+            {'var': 'Vesicle_voltage', 'title': 'Voltage vs Time', 'position': (0, 1), 'ylabel': 'Voltage (V)'},
+            {'var': 'Vesicle_volume', 'title': 'Volume vs Time', 'position': (0, 2), 'ylabel': 'Volume (m³)'},
+            
+            # Row 2: Ion concentrations (Cl, Na, K - excluding H as requested)
+            {'var': 'cl_vesicle_conc', 'title': 'Cl Concentration', 'position': (1, 0), 'ylabel': 'Cl Conc (M)'},
+            {'var': 'na_vesicle_conc', 'title': 'Na Concentration', 'position': (1, 1), 'ylabel': 'Na Conc (M)'},
+            {'var': 'k_vesicle_conc', 'title': 'K Concentration', 'position': (1, 2), 'ylabel': 'K Conc (M)'},
+            
+            # Row 3: X ion concentration and channel fluxes (ASOR, TPC)
+            {'var': unaccounted_ion_var, 'title': 'X Ion Concentration', 'position': (2, 0), 'ylabel': 'X Conc (M)'},
+            {'var': 'asor_flux', 'title': 'ASOR Flux', 'position': (2, 1), 'ylabel': 'Flux (mol/s)'},
+            {'var': 'tpc_flux', 'title': 'TPC Flux', 'position': (2, 2), 'ylabel': 'Flux (mol/s)'}
+        ]
+        
+        # Check for additional flux channels in logical order (CLC first, then CLC_H, NHE and NHE_H together, then V-ATPase)
+        additional_fluxes = []
+        # CLC comes first (moved from main grid to make room for X ion concentration)
+        if 'clc_flux' in available_histories:
+            additional_fluxes.append({'var': 'clc_flux', 'title': 'CLC Flux', 'ylabel': 'Flux (mol/s)'})
+        # CLC_H comes next (right after CLC)
+        if 'clc_h_flux' in available_histories:
+            additional_fluxes.append({'var': 'clc_h_flux', 'title': 'CLC_H Flux', 'ylabel': 'Flux (mol/s)'})
+        # NHE and NHE_H together
+        if 'nhe_flux' in available_histories:
+            additional_fluxes.append({'var': 'nhe_flux', 'title': 'NHE Flux', 'ylabel': 'Flux (mol/s)'})
+        if 'nhe_h_flux' in available_histories:
+            additional_fluxes.append({'var': 'nhe_h_flux', 'title': 'NHE_H Flux', 'ylabel': 'Flux (mol/s)'})
+        # V-ATPase last
+        if 'vatpase_flux' in available_histories:
+            additional_fluxes.append({'var': 'vatpase_flux', 'title': 'V-ATPase Flux', 'ylabel': 'Flux (mol/s)'})
+        
+        # Create figure with square subplots - 3x3 grid
+        fig, axs = plt.subplots(3, 3, figsize=(15, 15))  # Square figure with square subplots
+        fig.suptitle(f"Simulation Template: {display_name}", fontsize=16)
+        
+        # Define colors for different simulations
+        sim_colors = ['b', 'r', 'g', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        
+        # Get all simulation hashes to plot
+        sim_hash_list = [sim_hash] + [h for h in self.selected_simulations if h != sim_hash]
+        
+        # Process each plot in the 3x3 grid
+        for plot_config in plots_config:
+            row, col = plot_config['position']
+            ax = axs[row, col]
+            
+            # Special handling for unaccounted ion concentration (dynamic variable name)
+            if plot_config['var'] == unaccounted_ion_var:
+                # For unaccounted ion concentration, we need to check each simulation individually
+                # since each simulation may have a different variable name (e.g., cl_1_unaccounted_ion_conc, cl_2_unaccounted_ion_conc)
+                
+                # Set up the plot
+                ax.set_title(plot_config['title'], fontsize=12)
+                ax.set_xlabel('Time (s)', fontsize=10)
+                ax.set_ylabel(plot_config['ylabel'], fontsize=10)
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Track how many simulations are plotted on this subplot
+                sim_count = 0
+                
+                # Plot each simulation on this subplot
+                for j, current_sim_hash in enumerate(sim_hash_list):
+                    if current_sim_hash not in self.simulation_data:
+                        continue
+                        
+                    current_sim_data = self.simulation_data[current_sim_hash]
+                    current_available_histories = current_sim_data.get('available_histories', [])
+                    
+                    # Find the unaccounted ion concentration variable for this specific simulation
+                    current_unaccounted_var = None
+                    for var_name in current_available_histories:
+                        if var_name.endswith('_unaccounted_ion_conc'):
+                            current_unaccounted_var = var_name
+                            break
+                    
+                    # Skip if this simulation doesn't have the required data
+                    if 'simulation_time' not in current_available_histories or current_unaccounted_var is None:
+                        continue
+                    
+                    # Get time and variable data using the normalized name (which will be mapped back)
+                    time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                    var_data = self.get_simulation_variable(current_sim_hash, 'unaccounted_ion_conc')  # Use normalized name
+                    
+                    if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
+                        # Get the color for this simulation
+                        color = sim_colors[sim_count % len(sim_colors)]
+                        sim_count += 1
+                        
+                        # Get simulation name for the legend
+                        current_display_name = current_sim_data.get('display_name', f"Sim_{current_sim_hash[:8]}")
+                        
+                        # Plot the data
+                        ax.plot(time_data, var_data, color=color, label=current_display_name, linewidth=1.5)
+                
+                # Add legend if we have multiple simulations, but keep it small
+                if sim_count > 1:
+                    ax.legend(fontsize='x-small', loc='best')
+                elif sim_count == 0:
+                    # Show "No data available" text if no simulations had the data
+                    ax.text(0.5, 0.5, f"No {plot_config['title']} data available", 
+                           ha='center', va='center', fontsize=10)
+            
+            else:
+                # Standard handling for other variables
+                # Check if this variable is available
+                if plot_config['var'] not in available_histories:
+                    # Show "No data available" text for missing plots
+                    ax.text(0.5, 0.5, f"No {plot_config['title']} data available", 
+                           ha='center', va='center', fontsize=10)
+                    ax.set_title(plot_config['title'], fontsize=12)
+                    continue
+                
+                # Set up the plot
+                ax.set_title(plot_config['title'], fontsize=12)
+                ax.set_xlabel('Time (s)', fontsize=10)
+                ax.set_ylabel(plot_config['ylabel'], fontsize=10)
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Track how many simulations are plotted on this subplot
+                sim_count = 0
+                
+                # Plot each simulation on this subplot
+                for j, current_sim_hash in enumerate(sim_hash_list):
+                    if current_sim_hash not in self.simulation_data:
+                        continue
+                        
+                    current_sim_data = self.simulation_data[current_sim_hash]
+                    current_available_histories = current_sim_data.get('available_histories', [])
+                    
+                    # Skip if this simulation doesn't have the required data
+                    if 'simulation_time' not in current_available_histories or plot_config['var'] not in current_available_histories:
+                        continue
+                    
+                    # Get time and variable data
+                    time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                    var_data = self.get_simulation_variable(current_sim_hash, plot_config['var'])
+                    
+                    if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
+                        # Get the color for this simulation
+                        color = sim_colors[sim_count % len(sim_colors)]
+                        sim_count += 1
+                        
+                        # Get simulation name for the legend
+                        current_display_name = current_sim_data.get('display_name', f"Sim_{current_sim_hash[:8]}")
+                        
+                        # Plot the data
+                        ax.plot(time_data, var_data, color=color, label=current_display_name, linewidth=1.5)
+                
+                # Add legend if we have multiple simulations, but keep it small
+                if sim_count > 1:
+                    ax.legend(fontsize='x-small', loc='best')
+        
+        # Adjust layout to make plots square and well-spaced
+        plt.tight_layout(rect=[0, 0.03, 1, 0.96])  # Adjust for the suptitle
+        pdf.savefig(fig)
+        plt.close(fig)
+        
+        # If we have additional flux plots (NHE, V-ATPase), create a separate page
+        if additional_fluxes:
+            self._create_additional_flux_plots(pdf, sim_hash, display_name, additional_fluxes)
     
+    def _create_additional_flux_plots(self, pdf, sim_hash, display_name, additional_fluxes):
+        """Create additional flux plots in a 3x3 grid layout for CLC_H, NHE, NHE_H, and V-ATPase if they exist"""
+        sim_data = self.simulation_data[sim_hash]
+        available_histories = sim_data.get('available_histories', [])
+        
+        if 'simulation_time' not in available_histories:
+            return
+        
+        # Create a 3x3 grid for additional fluxes (consistent with main template)
+        fig, axs = plt.subplots(3, 3, figsize=(15, 15))  # Same size as main template
+        fig.suptitle(f"Additional Channel Fluxes: {display_name}", fontsize=16)
+        
+        # Define colors for different simulations
+        sim_colors = ['b', 'r', 'g', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        
+        # Get all simulation hashes to plot
+        sim_hash_list = [sim_hash] + [h for h in self.selected_simulations if h != sim_hash]
+        
+        # Define positions for the flux plots in the 3x3 grid
+        # Row 1: CLC, CLC_H, NHE
+        # Row 2: NHE_H, V-ATPase, [empty]
+        # Row 3: [empty], [empty], [empty]
+        flux_positions = [
+            (0, 0),  # CLC Flux
+            (0, 1),  # CLC_H Flux  
+            (0, 2),  # NHE Flux
+            (1, 0),  # NHE_H Flux
+            (1, 1),  # V-ATPase Flux
+            (1, 2),  # Available for future channels
+            (2, 0),  # Available for future channels
+            (2, 1),  # Available for future channels
+            (2, 2),  # Available for future channels
+        ]
+        
+        # Process each additional flux plot
+        for i, flux_config in enumerate(additional_fluxes):
+            if i >= len(flux_positions):  # Safety check - don't exceed grid
+                break
+                
+            row, col = flux_positions[i]
+            ax = axs[row, col]
+            
+            # Check if this variable is available
+            if flux_config['var'] not in available_histories:
+                ax.text(0.5, 0.5, f"No {flux_config['title']} data available", 
+                       ha='center', va='center', fontsize=10)
+                ax.set_title(flux_config['title'], fontsize=12)
+                continue
+            
+            # Set up the plot
+            ax.set_title(flux_config['title'], fontsize=12)
+            ax.set_xlabel('Time (s)', fontsize=10)
+            ax.set_ylabel(flux_config['ylabel'], fontsize=10)
+            ax.grid(True, linestyle='--', alpha=0.7)
+            
+            # Track how many simulations are plotted on this subplot
+            sim_count = 0
+            
+            # Plot each simulation on this subplot
+            for j, current_sim_hash in enumerate(sim_hash_list):
+                if current_sim_hash not in self.simulation_data:
+                    continue
+                    
+                current_sim_data = self.simulation_data[current_sim_hash]
+                current_available_histories = current_sim_data.get('available_histories', [])
+                
+                # Skip if this simulation doesn't have the required data
+                if 'simulation_time' not in current_available_histories or flux_config['var'] not in current_available_histories:
+                    continue
+                
+                # Get time and flux data
+                time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                flux_data = self.get_simulation_variable(current_sim_hash, flux_config['var'])
+                
+                if time_data is not None and flux_data is not None and len(time_data) > 0 and len(flux_data) > 0:
+                    # Get the color for this simulation
+                    color = sim_colors[sim_count % len(sim_colors)]
+                    sim_count += 1
+                    
+                    # Get simulation name for the legend
+                    current_display_name = current_sim_data.get('display_name', f"Sim_{current_sim_hash[:8]}")
+                    
+                    # Plot the data
+                    ax.plot(time_data, flux_data, color=color, label=current_display_name, linewidth=1.5)
+            
+            # Add legend if we have multiple simulations, but keep it small
+            if sim_count > 1:
+                ax.legend(fontsize='x-small', loc='best')
+        
+        # Hide unused subplots
+        for i in range(len(additional_fluxes), 9):  # Hide remaining empty plots
+            row, col = flux_positions[i]
+            axs[row, col].set_visible(False)
+        
+        # Adjust layout to make plots square and well-spaced (same as main template)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.96])  # Adjust for the suptitle
+        pdf.savefig(fig)
+        plt.close(fig)
+
     def _create_ph_voltage_time_plot(self, pdf, sim_hash, display_name):
         """Create a 2x2 grid of plots with pH, voltage, volume and charge over time"""
         sim_data = self.simulation_data[sim_hash]
