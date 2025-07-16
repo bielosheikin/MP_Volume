@@ -643,13 +643,13 @@ class ParameterEditorDialog(QDialog):
         voltage_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">V = </td><td style="padding:2px; text-align:left;">Q / C</td></tr></table>'
         
         # Buffer capacity equation - directly from simulation.py
-        buffer_capacity_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">β = </td><td style="padding:2px; text-align:left;">β<sub>init</sub> × V<sub>init</sub> / Volume</td></tr></table>'
+        buffer_capacity_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">β = </td><td style="padding:2px; text-align:left;">β<sub>init</sub> × Volume / V<sub>init</sub></td></tr></table>'
         
         # pH equation - directly from simulation.py
         ph_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">pH = </td><td style="padding:2px; text-align:left;">-log<sub>10</sub>([H<sup>+</sup>]<sub>free</sub>)</td></tr></table>'
         
         # Free hydrogen equation from update_pH method
-        free_h_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">[H<sup>+</sup>]<sub>free</sub> = </td><td style="padding:2px; text-align:left;">[H<sup>+</sup>]<sub>total</sub> × 1/β</td></tr></table>'
+        free_h_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">[H<sup>+</sup>]<sub>free</sub> = </td><td style="padding:2px; text-align:left;">[H<sup>+</sup>]<sub>total</sub> × β</td></tr></table>'
         
         # Add equations to the other equations display
         self.other_equation_display.add_equation("Unaccounted Ion Species", x_amount_eq)
