@@ -814,8 +814,9 @@ class SimulationWindow(QMainWindow):
                     
                     # Create completely new histories to avoid any registration conflicts
                     self.simulation.histories = HistoriesStorage()
-                    self.simulation.histories.histories['simulation_time'] = []
-                    self.simulation.histories.histories['simulation_time'].append(self.simulation.time)
+                    # Remove manual simulation_time management - 'time' is already tracked as TRACKABLE_FIELD
+                    # self.simulation.histories.histories['simulation_time'] = []
+                    # self.simulation.histories.histories['simulation_time'].append(self.simulation.time)
                     
                     # Register the simulation itself
                     self.simulation.histories.register_object(self.simulation)

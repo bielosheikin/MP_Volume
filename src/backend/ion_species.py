@@ -66,6 +66,7 @@ class IonSpecies(Configurable, Trackable):
             all_channels = flux_calculation_parameters.all_channels
         else:
             # Fallback: build from current species only (old behavior)
+            # Note: This fallback may not work properly for coupled channels across species
             for channel in self.channels:
                 all_channels[channel.display_name] = channel
         
@@ -78,13 +79,22 @@ class IonSpecies(Configurable, Trackable):
                 
                 # If this is a master channel, store its flux for coupled channels
                 if hasattr(channel, 'coupled_channels') and channel.coupled_channels:
-                    master_fluxes[channel.display_name] = flux
+                    # Store by the original channel key, not display_name, to match master_channel_name
+                    # Find the original key for this channel
+                    original_key = None
+                    for key, ch in all_channels.items():
+                        if ch is channel:
+                            original_key = key
+                            break
+                    if original_key:
+                        master_fluxes[original_key] = flux
         
         # Second pass: Calculate fluxes for coupled channels
         for channel in self.channels:
             if channel.is_coupled_channel:
                 # Find the master channel flux
                 master_name = channel.master_channel_name
+                
                 if master_name in master_fluxes:
                     # Master channel flux was calculated in this species
                     master_channel = all_channels.get(master_name)

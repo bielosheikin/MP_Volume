@@ -24,7 +24,7 @@ class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
     time_step: float = 0.001
     total_time: float = 100.0
-    temperature: float = 2578.5871 / IDEAL_GAS_CONSTANT
+    temperature: float = 310.13274319979337 # Temperature that gives legacy RT = 2578.5871
     init_buffer_capacity: float = 5e-4
     init_vesicle_pH: Optional[float] = None  # New field for initial vesicle pH
     channels: Optional[Dict[str, IonChannel]] = None
@@ -114,10 +114,11 @@ class Simulation(Configurable, Trackable):
         self.buffer_capacity = self.init_buffer_capacity
         self.histories = HistoriesStorage()
         
-        # Initialize simulation_time history
-        self.histories.histories['simulation_time'] = []
-        self.histories.histories['simulation_time'].append(self.time)
+        # Remove manual simulation_time management - 'time' is already a TRACKABLE_FIELD
+        # self.histories.histories['simulation_time'] = []
+        # self.histories.histories['simulation_time'].append(self.time)
         
+        # Calculate nernst constant from temperature for consistency
         self.nernst_constant = self.temperature * IDEAL_GAS_CONSTANT / FARADAY_CONSTANT
         self.unaccounted_ion_amounts = None
 
@@ -272,10 +273,10 @@ class Simulation(Configurable, Trackable):
         flux_calculation_parameters.nernst_constant = self.nernst_constant
         
         # Add all channels from all species for coupled channel lookup
+        # Use original channel keys (not display_name) so coupled channels can find their masters
         all_channels = {}
-        for species in self.all_species:
-            for channel in species.channels:
-                all_channels[channel.display_name] = channel
+        for channel_key, channel in self.channels.items():
+            all_channels[channel_key] = channel
         flux_calculation_parameters.all_channels = all_channels
     
         # Locate hydrogen species if available
@@ -392,24 +393,32 @@ class Simulation(Configurable, Trackable):
 
     
     def run_one_iteration(self):
-        self.update_simulation_state()
+        self.current_iteration += 1
 
+        # LEGACY TIMING FIX: Calculate fluxes using CURRENT state (before updating)
+        # This matches legacy: voltage at step t uses ion amounts from step t-1
         flux_calculation_parameters = self.get_Flux_Calculation_Parameters()
         fluxes = [ion.compute_total_flux(flux_calculation_parameters=flux_calculation_parameters) for ion in self.all_species]
 
-        self.current_iteration += 1
-        # Save histories at evenly spaced intervals based on save_interval
-        # Always save the first and last iteration
-        if (self.current_iteration % self.save_interval == 0) or (self.current_iteration == 1):
-            # Explicitly add simulation_time to histories
-            if 'simulation_time' not in self.histories.histories:
-                self.histories.histories['simulation_time'] = []
-            self.histories.histories['simulation_time'].append(self.time)
-            
-            # Update other histories
-            self.histories.update_histories()
-
+        # Update ion amounts with fluxes
         self.update_ion_amounts(fluxes)
+        
+        # Update concentrations after amounts change
+        self.update_vesicle_concentrations()
+
+        # Update simulation state using NEW concentrations for NEXT iteration
+        self.update_volume()
+        self.update_buffer()
+        self.update_area()
+        self.update_capacitance()
+        self.update_charge()
+        self.update_voltage()  # This voltage will be used in NEXT iteration
+        self.update_pH()
+
+        # Save histories AFTER state update
+        if (self.current_iteration % self.save_interval == 0) or (self.current_iteration == 1):
+            self.histories.update_histories()
+        
         self.time += self.time_step
 
     def run(self, progress_callback=None):            
@@ -428,6 +437,9 @@ class Simulation(Configurable, Trackable):
         
         # Reset iteration counter at the start of run
         self.current_iteration = 0
+        
+        # Record the true initial state at t=0 (initial conditions)
+        self.histories.update_histories()
 
         for iter_idx in range(self.iter_num):
             self.run_one_iteration()
@@ -442,10 +454,6 @@ class Simulation(Configurable, Trackable):
         
         # Always save the final iteration point
         self.histories.update_histories()
-        
-        # Ensure simulation_time includes the final time point
-        if len(self.histories.histories['simulation_time']) == 0 or self.histories.histories['simulation_time'][-1] != self.time:
-            self.histories.histories['simulation_time'].append(self.time)
         
         self.has_run = True
         return self.histories

@@ -328,7 +328,7 @@ def run_simulation(initial_state_ions_amounts, parameters):
         ''' update volume using the ion amounts and the initial amounts and store '''
         V_t[t] = (V_t0*(ions_t[Cl_idx, t]+ions_t[Na_idx,t]+ions_t[K_idx,t] + abs(parameters['X_amount'])))/parameters['Sum_initial_amounts']
     
-    ions_t_concen = ions_t/ (V_t[t] *1000)
+    ions_t_concen = ions_t/ (V_t *1000)
 
     ''' Package output of simulation into results dictionary / some understandable datastructure that is useful for downstream plotting/processing/etc.'''
 

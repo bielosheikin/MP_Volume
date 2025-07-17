@@ -358,6 +358,9 @@ class IonChannel(Configurable, Trackable):
         Compute flux for a coupled channel based on the master channel's flux.
         This enforces stoichiometric coupling by using the same thermodynamic driving force.
         
+        The key physics: Coupled channels must share the same thermodynamic driving force
+        but have different stoichiometric coefficients (flux_multipliers).
+        
         Args:
             master_flux: The flux calculated by the master channel
             master_channel: The master channel object to copy thermodynamic values from
@@ -368,33 +371,39 @@ class IonChannel(Configurable, Trackable):
         if not self.is_coupled_channel:
             raise ValueError(f"Channel {self.display_name} is not configured as a coupled channel")
             
-        # For true stoichiometric coupling, we use the master's thermodynamic driving force
-        # but apply our own stoichiometric coefficient (flux_multiplier)
-        
         if master_channel:
-            # Copy thermodynamic values from master channel
+            # CRITICAL: Copy the master's thermodynamic state - this is what makes it "coupled"
             self.nernst_potential = master_channel.nernst_potential
             self.pH_dependence = master_channel.pH_dependence
             self.voltage_dependence = master_channel.voltage_dependence
             self.time_dependence = master_channel.time_dependence
             
-            # Calculate the base transport rate from the master flux
-            # master_flux = master.flux_multiplier * base_transport_rate
-            # So: base_transport_rate = master_flux / master.flux_multiplier
-            if master_channel.flux_multiplier != 0:
+            # Calculate flux using the SAME thermodynamic driving force as master
+            # but with our own stoichiometric coefficient (flux_multiplier)
+            # 
+            # This mimics the legacy system where:
+            # J_Cl_CLC = 2.0 * potential_CLC * conductance * area * dependencies  
+            # J_H_CLC = -1.0 * potential_CLC * conductance * area * dependencies
+            # (same potential_CLC, different multipliers: 2.0 vs -1.0)
+            
+            if (master_channel.flux_multiplier != 0 and master_channel.nernst_potential != 0):
+                # Extract the base transport rate from master flux:
+                # master_flux = master.flux_multiplier * base_transport_rate
                 base_transport_rate = master_flux / master_channel.flux_multiplier
-                coupled_flux = self.flux_multiplier * base_transport_rate
+                
+                # Apply our stoichiometric coefficient to the same base transport rate
+                flux = self.flux_multiplier * base_transport_rate
             else:
-                # If master flux multiplier is 0, coupled flux should also be 0
-                coupled_flux = 0.0
+                # If master has zero flux or multiplier, coupled flux is also zero
+                flux = 0.0
         else:
             # Fallback: use simple proportional relationship
-            coupled_flux = master_flux * self.flux_multiplier
+            flux = master_flux * self.flux_multiplier
         
         # Store the flux for tracking
-        self.flux = coupled_flux
+        self.flux = flux
         
-        return coupled_flux
+        return flux
 
     def sync_from_master(self, master_channel: 'IonChannel'):
         """
