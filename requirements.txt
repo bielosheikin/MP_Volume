@@ -5,6 +5,9 @@ PyQt5==5.15.11
 PyQt5-Qt5>=5.15.2
 PyQt5_sip>=12.13.0
 
+# Build tools
+pyinstaller>=6.0.0
+
 # Utilities
 cycler==0.12.1
 fonttools==4.53.1
@@ -16,7 +19,6 @@ python-dateutil==2.8.2
 setuptools>=69.0.0
 six==1.16.0
 
-# Optional dependencies based on platform
-# Uncomment the appropriate line for your operating system
-#pywin32==306; platform_system == "Windows"
-#win32-setctime==1.1.0; platform_system == "Windows"
+# Windows-specific dependencies for better compatibility
+pywin32>=306; platform_system == "Windows"
+# win32-setctime==1.1.0; platform_system == "Windows"

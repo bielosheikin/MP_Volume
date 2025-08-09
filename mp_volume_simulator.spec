@@ -20,31 +20,53 @@ try:
     print(f"Found {len(src_modules)} src modules")
 except Exception as e:
     print(f"Warning: Could not collect src modules: {e}")
-    # Manually specify the modules if auto-collection fails
+    # Manually specify the current modules if auto-collection fails
     src_modules = [
         'src',
+        'src.app_settings',
+        
+        # Frontend modules
         'src.frontend',
+        'src.frontend.main_window',
         'src.frontend.suite_manager_window',
-        'src.frontend.simulation_window', 
+        'src.frontend.suite_window',
+        'src.frontend.simulation_window',
         'src.frontend.vesicle_tab',
         'src.frontend.ion_species_tab',
-        'src.frontend.ion_channels_tab',
-        'src.frontend.results_tab_suite',
+        'src.frontend.channels_tab',
+        'src.frontend.simulation_tab',
         'src.frontend.results_tab',
+        'src.frontend.results_tab_suite',
         'src.frontend.multi_graph_widget',
+        'src.frontend.simulation_manager',
+        
+        # Frontend utilities
+        'src.frontend.utils',
+        'src.frontend.utils.parameter_editor',
+        'src.frontend.utils.equation_generator',
+        'src.frontend.utils.latex_equation_display',
+        
+        # Backend modules
         'src.backend',
         'src.backend.simulation',
+        'src.backend.simulation_suite',
+        'src.backend.simulation_worker',
         'src.backend.vesicle',
         'src.backend.exterior',
         'src.backend.ion_species',
         'src.backend.ion_channels',
         'src.backend.default_ion_species',
-        'src.backend.latex_equations',
-        'src.backend.parameter_estimation',
-        'src.backend.trackable_variable',
-        'src.backend.simulation_manager',
-        'src.backend.suite_manager',
-        'src.app_settings',
+        'src.backend.default_channels',
+        'src.backend.ion_and_channels_link',
+        'src.backend.trackable',
+        'src.backend.histories_storage',
+        'src.backend.flux_calculation_parameters',
+        'src.backend.constants',
+        
+        # Configuration system
+        'src.nestconf',
+        'src.nestconf.config',
+        'src.nestconf.configurable',
     ]
 
 # Additional hidden imports that might be needed
@@ -75,7 +97,7 @@ hidden_imports = [
     'numpy.lib',
     'numpy.lib.format',
     
-    # Standard library modules
+    # Standard library modules that might not be auto-detected
     'json',
     'csv',
     'math',
@@ -132,6 +154,7 @@ excludes = [
     'trace',
     'doctest',
     'pydoc',
+    'legacy',  # Exclude legacy code
 ]
 
 a = Analysis(
@@ -150,7 +173,7 @@ a = Analysis(
     noarchive=False,
 )
 
-# Remove duplicate entries
+# Remove duplicate entries and troublesome files
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
 exe = EXE(
@@ -167,25 +190,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,  # Keep console for debugging
+    console=True,  # Keep console for user feedback during simulation
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=None,  # Add path to .ico file if you have an icon
-)
-
-# Optional: Create a directory distribution instead of a single file
-# Uncomment the following lines if you prefer a directory distribution:
-#
-# coll = COLLECT(
-#     exe,
-#     a.binaries,
-#     a.zipfiles,
-#     a.datas,
-#     strip=False,
-#     upx=True,
-#     upx_exclude=[],
-#     name='MP_Volume_Simulator'
-# ) 
+) 
