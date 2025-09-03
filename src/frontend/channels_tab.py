@@ -282,14 +282,16 @@ class ChannelsTab(QWidget):
         button_layout.setContentsMargins(2, 2, 2, 2)
         
         # Create edit button
-        edit_button = QPushButton("Edit")
+        edit_button = QPushButton("Edit/View")
         # Store the button in our dictionary
         self.edit_buttons[edit_button] = row
         edit_button.clicked.connect(lambda checked=False, btn=edit_button: 
             self.edit_parameters(self.edit_buttons[btn]))
         edit_button.setEnabled(bool(primary_ion))  # Only enable if primary ion is set
         if not primary_ion:
-            edit_button.setToolTip("Set primary ion species first before editing parameters")
+            edit_button.setToolTip("Set primary ion species first before editing/viewing parameters")
+        else:
+            edit_button.setToolTip("Edit parameters or view equations")
         button_layout.addWidget(edit_button)
         
         # Create delete button
@@ -453,7 +455,9 @@ class ChannelsTab(QWidget):
         parameters['allowed_secondary_ion'] = secondary_ion if secondary_ion else None
 
         # Create and show the parameter editor dialog
-        dialog = ParameterEditorDialog(parameters, channel_name, primary_ion, secondary_ion, self)
+        # Pass read-only state if available
+        read_only_mode = getattr(self, 'read_only', False)
+        dialog = ParameterEditorDialog(parameters, channel_name, primary_ion, secondary_ion, self, read_only=read_only_mode)
         if dialog.exec_():
             # Get updated parameters from the dialog
             updated_parameters = dialog.get_parameters()
@@ -922,6 +926,9 @@ class ChannelsTab(QWidget):
 
     def set_read_only(self, read_only=True):
         """Set the tab to read-only mode"""
+        # Store the read-only state
+        self.read_only = read_only
+        
         # Make all combo boxes read-only
         for row in range(self.table.rowCount()):
             # Primary ion combo box
@@ -934,14 +941,20 @@ class ChannelsTab(QWidget):
             if secondary_combo:
                 secondary_combo.setEnabled(not read_only)
             
-            # Edit button
+            # Edit button - keep visible but change text and tooltip based on mode
             edit_cell = self.table.cellWidget(row, 3)
             if edit_cell:
                 # The edit button is in a layout
                 button_layout = edit_cell.layout()
                 edit_button = button_layout.itemAt(0).widget()
                 if edit_button:
-                    edit_button.setVisible(not read_only)
+                    # Keep button visible but update text and tooltip
+                    if read_only:
+                        edit_button.setText("View")
+                        edit_button.setToolTip("View channel parameters and equations")
+                    else:
+                        edit_button.setText("Edit/View")
+                        edit_button.setToolTip("Edit parameters or view equations")
                 
                 # The delete button is also in the same layout
                 delete_button = button_layout.itemAt(1).widget()

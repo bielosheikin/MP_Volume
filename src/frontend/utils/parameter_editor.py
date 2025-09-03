@@ -54,10 +54,17 @@ class ParameterEditorDialog(QDialog):
         'time_exponent', 'half_act_time'
     ]
     
-    def __init__(self, parameters, channel_name=None, primary_ion=None, secondary_ion=None, parent=None):
+    def __init__(self, parameters, channel_name=None, primary_ion=None, secondary_ion=None, parent=None, read_only=False):
         super().__init__(parent)
+        
+        # Store read-only state
+        self.read_only = read_only
+        
         # Set window title with channel name if provided
-        title = f"Edit Channel: {channel_name}" if channel_name else "Edit Channel Parameters"
+        if read_only:
+            title = f"View Channel: {channel_name}" if channel_name else "View Channel Parameters"
+        else:
+            title = f"Edit Channel: {channel_name}" if channel_name else "Edit Channel Parameters"
         self.setWindowTitle(title)
         
         self.parameters = parameters
@@ -82,7 +89,11 @@ class ParameterEditorDialog(QDialog):
         self.form_layout = QVBoxLayout(self.form_widget)
         
         # Add a header information label with updated text
-        info_label = QLabel("Edit channel parameters. Channels with non-zero conductance will affect ion movement during simulation.")
+        if self.read_only:
+            info_label = QLabel("View channel parameters and equations. This is a read-only view - no changes can be made.")
+            info_label.setStyleSheet("color: #666; font-style: italic; background-color: #f0f0f0; padding: 8px; border: 1px solid #ccc; border-radius: 4px;")
+        else:
+            info_label = QLabel("Edit channel parameters. Channels with non-zero conductance will affect ion movement during simulation.")
         info_label.setWordWrap(True)
         self.form_layout.addWidget(info_label)
         
@@ -207,6 +218,11 @@ class ParameterEditorDialog(QDialog):
             self.dependence_type_input.setToolTip(f"Dependency type is controlled by the master channel '{self.master_channel_name}'")
             self.dependence_type_input.setStyleSheet("background-color: #f0f0f0; color: #666666;")
         
+        # Disable dependency controls for read-only mode
+        if self.read_only:
+            self.dependence_type_input.setEnabled(False)
+            self.dependence_type_input.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+        
         # Create channel type dropdown
         self.channel_type_widget = QWidget()
         self.channel_type_layout = QFormLayout(self.channel_type_widget)
@@ -235,6 +251,11 @@ class ParameterEditorDialog(QDialog):
         if self.is_coupled_channel:
             self.channel_type_input.setEnabled(False)
             self.channel_type_input.setToolTip(f"Channel type is controlled by the master channel '{self.master_channel_name}'")
+            self.channel_type_input.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+        
+        # Disable channel type for read-only mode
+        if self.read_only:
+            self.channel_type_input.setEnabled(False)
             self.channel_type_input.setStyleSheet("background-color: #f0f0f0; color: #666666;")
         
         # We'll connect signals later to avoid multiple connections
@@ -286,6 +307,11 @@ class ParameterEditorDialog(QDialog):
                     input_field.setEnabled(False)
                     input_field.setToolTip(f"This parameter is controlled by the master channel '{self.master_channel_name}'")
                     input_field.setStyleSheet("color: #666666;")  # Grayed out appearance
+                
+                # For read-only mode, disable checkbox
+                if self.read_only:
+                    input_field.setEnabled(False)
+                    input_field.setStyleSheet("color: #666666;")  # Grayed out appearance
             else:
                 # For numeric or text fields, use QLineEdit
                 input_field = QLineEdit(str(value) if value is not None else '')
@@ -320,6 +346,14 @@ class ParameterEditorDialog(QDialog):
                     input_field.setToolTip(f"This parameter is controlled by the master channel '{self.master_channel_name}'")
                     if isinstance(input_field, QLineEdit):
                         input_field.setStyleSheet("background-color: #f0f0f0; color: #666666;")  # Grayed out appearance
+                
+                # For read-only mode, disable all input fields
+                if self.read_only:
+                    input_field.setEnabled(False)
+                    if isinstance(input_field, QLineEdit):
+                        input_field.setStyleSheet("background-color: #f0f0f0; color: #666666;")  # Grayed out appearance
+                    elif isinstance(input_field, QCheckBox):
+                        input_field.setStyleSheet("color: #666666;")  # Grayed out appearance
 
             self.inputs[key] = input_field
             self.params_form_layout.addRow(display_name, input_field)
@@ -330,9 +364,13 @@ class ParameterEditorDialog(QDialog):
         separator.setFrameShadow(QFrame.Sunken)
         self.form_layout.addWidget(separator)
 
-        # Add Save button
-        self.save_button = QPushButton("Save")
-        self.save_button.clicked.connect(self.save_parameters)
+        # Add Save button (or Close button in read-only mode)
+        if self.read_only:
+            self.save_button = QPushButton("Close")
+            self.save_button.clicked.connect(self.reject)  # Just close the dialog
+        else:
+            self.save_button = QPushButton("Save")
+            self.save_button.clicked.connect(self.save_parameters)
         self.form_layout.addWidget(self.save_button)
         
         # Now connect the signals after all UI elements are created
@@ -424,6 +462,13 @@ class ParameterEditorDialog(QDialog):
             voltage_exponent.setPlaceholderText("Enter a number")
             half_act_voltage.setPlaceholderText("Enter a number")
             
+            # Disable for read-only mode
+            if self.read_only:
+                voltage_exponent.setEnabled(False)
+                voltage_exponent.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+                half_act_voltage.setEnabled(False)
+                half_act_voltage.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+            
             self.dependency_params_layout.addRow("Voltage Exponent", voltage_exponent)
             self.dependency_params_layout.addRow("Half Activation Voltage", half_act_voltage)
             
@@ -463,6 +508,13 @@ class ParameterEditorDialog(QDialog):
                 pH_exponent.setText(str(self.parameters.get('pH_exponent', 3.0)))
                 half_act_pH.setText(str(self.parameters.get('half_act_pH', 5.4)))
             
+            # Disable for read-only mode
+            if self.read_only:
+                pH_exponent.setEnabled(False)
+                pH_exponent.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+                half_act_pH.setEnabled(False)
+                half_act_pH.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+            
             self.dependency_params_layout.addRow("pH Exponent", pH_exponent)
             self.dependency_params_layout.addRow("Half Activation pH", half_act_pH)
             
@@ -494,6 +546,13 @@ class ParameterEditorDialog(QDialog):
             # Add placeholder hints
             time_exponent.setPlaceholderText("Enter a number")
             half_act_time.setPlaceholderText("Enter a number")
+            
+            # Disable for read-only mode
+            if self.read_only:
+                time_exponent.setEnabled(False)
+                time_exponent.setStyleSheet("background-color: #f0f0f0; color: #666666;")
+                half_act_time.setEnabled(False)
+                half_act_time.setStyleSheet("background-color: #f0f0f0; color: #666666;")
             
             self.dependency_params_layout.addRow("Time Exponent", time_exponent)
             self.dependency_params_layout.addRow("Half Activation Time", half_act_time)
