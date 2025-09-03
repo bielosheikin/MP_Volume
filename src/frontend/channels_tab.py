@@ -950,6 +950,9 @@ class ChannelsTab(QWidget):
         
         # Disable the add button
         self.add_button.setVisible(not read_only)
+        
+        # Disable the create coupled channel button
+        self.create_coupled_button.setVisible(not read_only)
 
     def synchronize_coupled_channels(self, channel_name, updated_parameters):
         """Synchronize coupled channels when their master channel is updated"""

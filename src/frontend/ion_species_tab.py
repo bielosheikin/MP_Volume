@@ -97,6 +97,14 @@ class IonSpeciesTab(QWidget):
         
     def delete_ion_species(self, row):
         """Delete an ion species from the table"""
+        # Check if we're in read-only mode and prevent deletion
+        if hasattr(self, 'read_only') and getattr(self, 'read_only', False):
+            if DEBUG_LOGGING:
+                print(f"[DEBUG] Ignoring delete request - tab is in read-only mode")
+            QMessageBox.warning(self, "Read-Only Mode", 
+                               "Cannot delete ion species in view-only mode.")
+            return
+        
         if DEBUG_LOGGING:
             print(f"[DEBUG] Attempting to delete ion species at row {row}")
             print(f"[DEBUG] Current table row count: {self.table.rowCount()}")
@@ -187,6 +195,15 @@ class IonSpeciesTab(QWidget):
         
     def set_read_only(self, read_only=True):
         """Set the tab to read-only mode"""
+        from ..app_settings import DEBUG_LOGGING
+        
+        # Store the read-only state
+        self.read_only = read_only
+        
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Ion Species Tab: Setting read_only mode to {read_only}")
+            print(f"[DEBUG] Table has {self.table.rowCount()} rows")
+        
         # Make table cells read-only
         if read_only:
             self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -194,10 +211,25 @@ class IonSpeciesTab(QWidget):
             self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
         
         # Hide or disable delete buttons in each row
+        buttons_processed = 0
         for row in range(self.table.rowCount()):
             delete_button = self.table.cellWidget(row, 4)
             if delete_button:
                 delete_button.setVisible(not read_only)
+                # Also disable the button as an extra safety measure
+                delete_button.setEnabled(not read_only)
+                buttons_processed += 1
+                if DEBUG_LOGGING:
+                    print(f"[DEBUG] Row {row}: Set delete button visible={not read_only}, enabled={not read_only}")
+            else:
+                if DEBUG_LOGGING:
+                    print(f"[DEBUG] Row {row}: No delete button found")
+        
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Processed {buttons_processed} delete buttons")
         
         # Disable the add button
         self.add_button.setVisible(not read_only)
+        
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Set add button visible to {not read_only}")
