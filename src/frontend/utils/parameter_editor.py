@@ -621,8 +621,10 @@ class ParameterEditorDialog(QDialog):
                     if hasattr(master_channel, field):
                         master_params[field] = getattr(master_channel, field)
                 
-                # Use master channel parameters for equation generation
-                equation_params = master_params
+                # Use master channel parameters for equation generation, but preserve coupled channel's flux_multiplier
+                equation_params = master_params.copy()
+                # CRITICAL: Keep the coupled channel's flux_multiplier, not the master's
+                equation_params['flux_multiplier'] = current_params.get('flux_multiplier', equation_params.get('flux_multiplier', 1.0))
                 equation_primary_ion = master_params.get('allowed_primary_ion')
                 equation_secondary_ion = master_params.get('allowed_secondary_ion')
         
@@ -632,8 +634,8 @@ class ParameterEditorDialog(QDialog):
             <div style='background-color: #e8f4fd; border: 1px solid #bee5eb; border-radius: 4px; padding: 8px; margin-bottom: 10px;'>
                 <b>ℹ️ Coupled Channel Note:</b><br>
                 This channel is coupled to <b>{self.master_channel_name}</b> and uses the same thermodynamic driving force.
-                The equations shown below represent the master channel's thermodynamics.
-                Only the flux multiplier differs to enforce stoichiometric coupling.
+                The equations show the master channel's thermodynamics with <b>this channel's flux multiplier</b> ({current_params.get('flux_multiplier', 'N/A')}).
+                Changes to the flux multiplier will update the equation in real-time.
             </div>
             """
             self.equation_display.add_equation("Coupling Information", coupling_note)
