@@ -152,8 +152,14 @@ class ChannelsTab(QWidget):
                 channel_config = default_channels[channel_name]
                 # Extract only the configuration parameters we need for the UI
                 parameters = self.extract_config_parameters(channel_config)
-                self.channel_parameters[channel_name] = parameters
-                self.add_channel_row(channel_name, ion_name, secondary_ion, parameters)
+                
+                # CRITICAL: Only add non-coupled channels as regular channels
+                # Coupled channels should only be created via the "Create Coupled Channel" button
+                if not parameters.get('is_coupled_channel', False):
+                    self.channel_parameters[channel_name] = parameters
+                    self.add_channel_row(channel_name, ion_name, secondary_ion, parameters)
+                elif DEBUG_LOGGING:
+                    print(f"Skipping coupled channel '{channel_name}' from default channel list")
 
     def extract_config_parameters(self, channel):
         """Extract only the configuration parameters from a channel object."""
@@ -182,10 +188,12 @@ class ChannelsTab(QWidget):
             'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
             'custom_nernst_constant', 'use_free_hydrogen',
             'invert_primary_log_term', 'invert_secondary_log_term',
-            'is_coupled_channel', 'master_channel_name', 'coupled_channels',  # Coupling parameters
             'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
             'time_exponent', 'half_act_time'
         ]
+        
+        # Coupling parameters are handled separately to avoid false positives
+        coupling_fields = ['is_coupled_channel', 'master_channel_name', 'coupled_channels']
         
         # Extract only these fields from the channel object
         parameters = {}
@@ -197,6 +205,18 @@ class ChannelsTab(QWidget):
             elif hasattr(type(channel), field) and not field.startswith('_'):
                 # Get class-level default if instance doesn't have the attribute
                 parameters[field] = getattr(type(channel), field, None)
+        
+        # Handle coupling parameters separately
+        # Only include coupling parameters if the channel is actually coupled
+        if hasattr(channel, 'is_coupled_channel') and getattr(channel, 'is_coupled_channel', False):
+            for field in coupling_fields:
+                if hasattr(channel, field):
+                    parameters[field] = getattr(channel, field)
+        else:
+            # For non-coupled channels, explicitly set coupling parameters to their default values
+            parameters['is_coupled_channel'] = False
+            parameters['master_channel_name'] = None
+            parameters['coupled_channels'] = None
         
         return parameters
 
@@ -544,15 +564,9 @@ class ChannelsTab(QWidget):
         if master_params.get('is_coupled_channel', False):
             QMessageBox.warning(self, "Invalid Master", "Cannot create a coupled channel from another coupled channel. Please select a master channel.")
             return
-            
-        # Generate a name for the coupled channel
-        coupled_channel_name = f"{master_channel_name}_coupled"
-        counter = 1
-        while coupled_channel_name in self.channel_parameters:
-            coupled_channel_name = f"{master_channel_name}_coupled_{counter}"
-            counter += 1
-            
-        # Get master channel's ion configuration
+        
+        # CRITICAL: Update master_params with current dropdown values to reflect any unsaved changes
+        # This ensures coupled channel creation uses the current state, not just saved parameters
         master_primary_combo = self.table.cellWidget(current_row, 1)
         master_secondary_combo = self.table.cellWidget(current_row, 2)
         
@@ -563,11 +577,24 @@ class ChannelsTab(QWidget):
         master_primary_ion = master_primary_combo.currentText()
         master_secondary_ion = master_secondary_combo.currentText() if master_secondary_combo else ""
         
+        # Update master_params with current ion selections (real-time preview)
+        master_params = master_params.copy()  # Don't modify the original
+        master_params['allowed_primary_ion'] = master_primary_ion if master_primary_ion else None
+        master_params['allowed_secondary_ion'] = master_secondary_ion if master_secondary_ion else None
+            
         if not master_primary_ion:
             QMessageBox.warning(self, "Invalid Master", "Master channel must have a primary ion species.")
             return
             
-        # For coupled channels, we swap primary and secondary ions
+        # Generate a name for the coupled channel
+        coupled_channel_name = f"{master_channel_name}_coupled"
+        counter = 1
+        while coupled_channel_name in self.channel_parameters:
+            coupled_channel_name = f"{master_channel_name}_coupled_{counter}"
+            counter += 1
+            
+        # For coupled channels, swap the display positions of primary/secondary ions in the UI
+        # This is just for UI display - the equations still use the same thermodynamic relationship
         coupled_primary_ion = master_secondary_ion if master_secondary_ion else ""
         coupled_secondary_ion = master_primary_ion
         

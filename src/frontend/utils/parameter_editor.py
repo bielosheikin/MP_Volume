@@ -598,33 +598,49 @@ class ParameterEditorDialog(QDialog):
         equation_primary_ion = self.primary_ion
         equation_secondary_ion = self.secondary_ion
         
+        # Debug: Print ion species being used for equations
+        from ...app_settings import DEBUG_LOGGING
+        if DEBUG_LOGGING:
+            print(f"[DEBUG] Equation display using primary_ion='{equation_primary_ion}', secondary_ion='{equation_secondary_ion}'")
+            print(f"[DEBUG] Current params allowed ions: primary='{current_params.get('allowed_primary_ion')}', secondary='{current_params.get('allowed_secondary_ion')}')")
+        
         if self.is_coupled_channel and self.master_channel_name:
-            # Import here to avoid circular imports
-            from ...backend.default_channels import default_channels
+            # For coupled channels, we need to get the master channel's ion species for equations
+            # The UI shows swapped ions, but equations use the master's original ions
             
-            # Get master channel parameters
-            if self.master_channel_name in default_channels:
-                master_channel = default_channels[self.master_channel_name]
-                
-                # Extract master channel parameters for equation generation
-                master_params = {}
-                config_fields = [
-                    'conductance', 'channel_type', 'dependence_type',
-                    'voltage_multiplier', 'nernst_multiplier', 'voltage_shift', 'flux_multiplier',
-                    'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
-                    'custom_nernst_constant', 'use_free_hydrogen',
-                    'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
-                    'time_exponent', 'half_act_time'
-                ]
-                
-                for field in config_fields:
-                    if hasattr(master_channel, field):
-                        master_params[field] = getattr(master_channel, field)
-                
+            # Try to get master channel parameters from the channels tab
+            master_params = None
+            if hasattr(self.parent(), 'channel_parameters') and self.master_channel_name in self.parent().channel_parameters:
+                master_params = self.parent().channel_parameters[self.master_channel_name].copy()
+            else:
+                # Fallback to default channels
+                from ...backend.default_channels import default_channels
+                if self.master_channel_name in default_channels:
+                    master_channel = default_channels[self.master_channel_name]
+                    
+                    # Extract master channel parameters for equation generation
+                    master_params = {}
+                    config_fields = [
+                        'conductance', 'channel_type', 'dependence_type',
+                        'voltage_multiplier', 'nernst_multiplier', 'voltage_shift', 'flux_multiplier',
+                        'allowed_primary_ion', 'allowed_secondary_ion', 'primary_exponent', 'secondary_exponent',
+                        'custom_nernst_constant', 'use_free_hydrogen',
+                        'voltage_exponent', 'half_act_voltage', 'pH_exponent', 'half_act_pH', 
+                        'time_exponent', 'half_act_time'
+                    ]
+                    
+                    for field in config_fields:
+                        if hasattr(master_channel, field):
+                            master_params[field] = getattr(master_channel, field)
+            
+            if master_params:
                 # Use master channel parameters for equation generation, but preserve coupled channel's flux_multiplier
                 equation_params = master_params.copy()
                 # CRITICAL: Keep the coupled channel's flux_multiplier, not the master's
                 equation_params['flux_multiplier'] = current_params.get('flux_multiplier', equation_params.get('flux_multiplier', 1.0))
+                
+                # CRITICAL: For coupled channels, use the master channel's original ion species for equations
+                # This ensures both primary and secondary ions appear in the equation
                 equation_primary_ion = master_params.get('allowed_primary_ion')
                 equation_secondary_ion = master_params.get('allowed_secondary_ion')
         
@@ -883,6 +899,13 @@ class ParameterEditorDialog(QDialog):
 
     def get_parameters(self):
         """Return the modified parameters"""
+        # For non-coupled channels, ensure coupling flags are correctly set to False
+        if not self.is_coupled_channel:
+            # Explicitly ensure coupling parameters are set to their default values for regular channels
+            self.parameters['is_coupled_channel'] = False
+            self.parameters['master_channel_name'] = None
+            self.parameters['coupled_channels'] = None
+        
         return self.parameters
 
     def apply_changes(self):
