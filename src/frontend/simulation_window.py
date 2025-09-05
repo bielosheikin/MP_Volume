@@ -114,6 +114,7 @@ class SimulationWindow(QMainWindow):
         
         # Connect vesicle tab hydrogen concentration changes to ion species tab
         self.vesicle_tab.hydrogen_concentration_changed.connect(self.update_hydrogen_concentration_in_ion_species)
+        self.vesicle_tab.exterior_hydrogen_concentration_changed.connect(self.update_exterior_hydrogen_concentration_in_ion_species)
         
         # Update available ion species in the channels tab
         self.update_channel_ion_species()
@@ -158,17 +159,19 @@ class SimulationWindow(QMainWindow):
         self.channels_tab.update_ion_species_list(list(ion_species_data.keys()))
     
     def update_hydrogen_concentration_in_ion_species(self, h_concentration):
-        """Update hydrogen concentration in the ion species tab when it changes in vesicle tab"""
+        """Update vesicle hydrogen concentration in the ion species tab when it changes in vesicle tab"""
         try:
             # Get current ion species data
             ion_species_data = self.ion_species_tab.get_data()
             if not ion_species_data:
                 ion_species_data = {}
             
-            # Update or add hydrogen species with the new concentration
+            # Update or add hydrogen species with the new vesicle concentration
+            # Keep existing exterior concentration if available
+            current_h_data = ion_species_data.get('h', {})
             ion_species_data['h'] = {
                 'init_vesicle_conc': h_concentration,
-                'exterior_conc': ion_species_data.get('h', {}).get('exterior_conc', 12.619146889603859 * 1e-5),  # Default exterior conc
+                'exterior_conc': current_h_data.get('exterior_conc', 12.619146889603859 * 1e-5),  # Keep current or default
                 'elementary_charge': 1
             }
             
@@ -178,10 +181,38 @@ class SimulationWindow(QMainWindow):
             # Update available ion species in channels tab
             self.update_channel_ion_species()
             
-            debug_print(f"Updated hydrogen concentration to {h_concentration:.6e} M")
+            debug_print(f"Updated hydrogen vesicle concentration to {h_concentration:.6e} M")
             
         except Exception as e:
             debug_print(f"Error updating hydrogen concentration: {str(e)}")
+    
+    def update_exterior_hydrogen_concentration_in_ion_species(self, exterior_h_concentration):
+        """Update exterior hydrogen concentration in the ion species tab when exterior pH changes"""
+        try:
+            # Get current ion species data
+            ion_species_data = self.ion_species_tab.get_data()
+            if not ion_species_data:
+                ion_species_data = {}
+            
+            # Update or add hydrogen species with the new exterior concentration
+            # Keep existing vesicle concentration if available
+            current_h_data = ion_species_data.get('h', {})
+            ion_species_data['h'] = {
+                'init_vesicle_conc': current_h_data.get('init_vesicle_conc', 7.962143411069938 * 1e-5),  # Keep current or default
+                'exterior_conc': exterior_h_concentration,
+                'elementary_charge': 1
+            }
+            
+            # Update the ion species tab
+            self.ion_species_tab.set_data(ion_species_data)
+            
+            # Update available ion species in channels tab
+            self.update_channel_ion_species()
+            
+            debug_print(f"Updated hydrogen exterior concentration to {exterior_h_concentration:.6e} M")
+            
+        except Exception as e:
+            debug_print(f"Error updating exterior hydrogen concentration: {str(e)}")
     
     def update_vesicle_calculated_pH(self):
         """Legacy method - now vesicle tab calculates its own values"""

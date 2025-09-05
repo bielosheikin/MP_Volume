@@ -9,6 +9,8 @@ from ..backend.default_ion_species import default_ion_species
 class VesicleTab(QWidget):
     # Signal to notify when hydrogen concentration changes
     hydrogen_concentration_changed = pyqtSignal(float)
+    # Signal to notify when exterior hydrogen concentration changes
+    exterior_hydrogen_concentration_changed = pyqtSignal(float)
     
     def __init__(self):
         super().__init__()
@@ -53,7 +55,14 @@ class VesicleTab(QWidget):
         self.default_pH.setDecimals(2)
         self.default_pH.setRange(0, 14)
         self.default_pH.setValue(7.2)
+        self.default_pH.valueChanged.connect(self.update_calculated_hydrogen_concentration)
         layout.addRow("Exterior Default pH:", self.default_pH)
+        
+        # Display calculated exterior hydrogen concentration
+        self.calculated_exterior_h_concentration = QLineEdit()
+        self.calculated_exterior_h_concentration.setReadOnly(True)
+        self.calculated_exterior_h_concentration.setStyleSheet("background-color: #f0f0f0;")
+        layout.addRow("Calculated Exterior H+ Concentration (M):", self.calculated_exterior_h_concentration)
 
         self.setLayout(layout)
         
@@ -65,7 +74,9 @@ class VesicleTab(QWidget):
         try:
             vesicle_pH = self.init_vesicle_pH.value()
             buffer_capacity = self.buffer_capacity.value()
+            exterior_pH = self.default_pH.value()
             
+            # Calculate vesicle hydrogen concentration
             # Calculate free hydrogen concentration from pH
             free_h_conc = 10 ** (-vesicle_pH)
             
@@ -74,16 +85,29 @@ class VesicleTab(QWidget):
             # Therefore: total_h_conc = free_h_conc / buffer_capacity
             total_h_conc = free_h_conc / buffer_capacity
             
-            # Display the calculated concentration
+            # Display the calculated vesicle concentration
             self.calculated_h_concentration.setText(f"{total_h_conc:.6e}")
             self.calculated_h_concentration.setStyleSheet("background-color: #f0f0f0; color: #000000;")
             
-            # Emit signal with the new hydrogen concentration
+            # Calculate exterior hydrogen concentration from exterior pH
+            # For exterior, we assume no buffer capacity (or same buffer capacity)
+            # For simplicity, we'll use the same buffer capacity as vesicle
+            exterior_free_h_conc = 10 ** (-exterior_pH)
+            exterior_total_h_conc = exterior_free_h_conc / buffer_capacity
+            
+            # Display the calculated exterior concentration
+            self.calculated_exterior_h_concentration.setText(f"{exterior_total_h_conc:.6e}")
+            self.calculated_exterior_h_concentration.setStyleSheet("background-color: #f0f0f0; color: #000000;")
+            
+            # Emit signals with the new hydrogen concentrations
             self.hydrogen_concentration_changed.emit(total_h_conc)
+            self.exterior_hydrogen_concentration_changed.emit(exterior_total_h_conc)
             
         except Exception as e:
             self.calculated_h_concentration.setText(f"Error: {str(e)}")
             self.calculated_h_concentration.setStyleSheet("background-color: #fff0f0; color: #aa0000;")
+            self.calculated_exterior_h_concentration.setText(f"Error: {str(e)}")
+            self.calculated_exterior_h_concentration.setStyleSheet("background-color: #fff0f0; color: #aa0000;")
     
     def get_calculated_hydrogen_concentration(self):
         """Get the calculated hydrogen concentration"""

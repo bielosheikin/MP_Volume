@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, Qt
 from ..backend.default_ion_species import default_ion_species
 from ..app_settings import DEBUG_LOGGING
 
@@ -46,17 +46,34 @@ class IonSpeciesTab(QWidget):
             print(f"[DEBUG] Adding ion row at index {row} with name {name}")
         self.table.setItem(row, 0, QTableWidgetItem(name))
         
-        # Use scientific notation for very small values, 3 decimal places for regular values
+        # Create vesicle concentration item
         if abs(init_vesicle_conc) < 0.001:
-            self.table.setItem(row, 1, QTableWidgetItem(f"{init_vesicle_conc:.2e}"))
+            vesicle_item = QTableWidgetItem(f"{init_vesicle_conc:.2e}")
         else:
-            self.table.setItem(row, 1, QTableWidgetItem(f"{init_vesicle_conc:.3f}"))
-            
+            vesicle_item = QTableWidgetItem(f"{init_vesicle_conc:.3f}")
+        
+        # Create exterior concentration item  
         if abs(exterior_conc) < 0.001:
-            self.table.setItem(row, 2, QTableWidgetItem(f"{exterior_conc:.2e}"))
+            exterior_item = QTableWidgetItem(f"{exterior_conc:.2e}")
         else:
-            self.table.setItem(row, 2, QTableWidgetItem(f"{exterior_conc:.3f}"))
+            exterior_item = QTableWidgetItem(f"{exterior_conc:.3f}")
+        
+        # Make hydrogen concentrations read-only since they're calculated from pH
+        if name.lower() == 'h':
+            from PyQt5.QtGui import QColor
             
+            vesicle_item.setFlags(vesicle_item.flags() & ~Qt.ItemIsEditable)
+            vesicle_item.setToolTip("This concentration is calculated from vesicle pH and buffer capacity")
+            # Use light blue/gray background to indicate calculated field
+            vesicle_item.setBackground(QColor(230, 240, 250))  # Light blue-gray
+            
+            exterior_item.setFlags(exterior_item.flags() & ~Qt.ItemIsEditable)
+            exterior_item.setToolTip("This concentration is calculated from exterior pH")
+            # Use light blue/gray background to indicate calculated field
+            exterior_item.setBackground(QColor(230, 240, 250))  # Light blue-gray
+        
+        self.table.setItem(row, 1, vesicle_item)
+        self.table.setItem(row, 2, exterior_item)
         self.table.setItem(row, 3, QTableWidgetItem(str(charge)))
         
         # Add a delete button with direct row reference
