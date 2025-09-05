@@ -391,12 +391,67 @@ class SimulationSuite:
                 print(f"   {traceback.format_exc()}")
             return None
     
-    def add_simulation(self, simulation: Simulation) -> Union[bool, Tuple[bool, str]]:
+    def _get_existing_simulation_names(self) -> Set[str]:
+        """
+        Get all existing simulation names from both memory and filesystem.
+        
+        Returns:
+            A set of simulation display names that already exist
+        """
+        names = set()
+        
+        # Get names from in-memory simulations
+        for sim in self.simulations:
+            if hasattr(sim, 'display_name') and sim.display_name:
+                names.add(sim.display_name)
+        
+        # Get names from filesystem simulations
+        try:
+            if os.path.exists(self.suite_path):
+                for item in os.listdir(self.suite_path):
+                    item_path = os.path.join(self.suite_path, item)
+                    if os.path.isdir(item_path):
+                        config_path = os.path.join(item_path, "config.json")
+                        if os.path.exists(config_path):
+                            try:
+                                with open(config_path, 'r') as f:
+                                    config_data = json.load(f)
+                                
+                                # Try to get display_name from different possible locations
+                                display_name = None
+                                
+                                # First try metadata section
+                                if 'metadata' in config_data and 'display_name' in config_data['metadata']:
+                                    display_name = config_data['metadata']['display_name']
+                                
+                                # Then try simulation section
+                                elif 'simulation' in config_data and 'display_name' in config_data['simulation']:
+                                    display_name = config_data['simulation']['display_name']
+                                
+                                # Finally try root level
+                                elif 'display_name' in config_data:
+                                    display_name = config_data['display_name']
+                                
+                                if display_name:
+                                    names.add(display_name)
+                                    
+                            except (json.JSONDecodeError, IOError, KeyError) as e:
+                                if DEBUG_LOGGING:
+                                    print(f"Warning: Could not read simulation name from {config_path}: {str(e)}")
+                                continue
+        except OSError as e:
+            if DEBUG_LOGGING:
+                print(f"Warning: Could not read suite directory {self.suite_path}: {str(e)}")
+        
+        return names
+    
+    def add_simulation(self, simulation: Simulation, allow_name_reuse: bool = False) -> Union[bool, Tuple[bool, str]]:
         """
         Add a simulation to the suite.
         
         Args:
             simulation: The Simulation object to add
+            allow_name_reuse: If True, allows reusing the same name (for editing existing simulations)
             
         Returns:
             If successful: True
@@ -405,14 +460,38 @@ class SimulationSuite:
         # Generate the simulation hash
         sim_hash = simulation.get_hash()
         
-        # Check if this simulation already exists in the suite
+        # Check if this simulation already exists in the suite (parameter duplication)
         sim_path = os.path.join(self.suite_path, sim_hash)
         if os.path.exists(sim_path):
             return False, f"A simulation with identical parameters already exists. Please modify parameters to create a unique simulation."
         
-        # Also check if simulation with the same hash is already in our set
+        # Also check if simulation with the same hash is already in our set (parameter duplication)
         if any(sim.get_hash() == sim_hash for sim in self.simulations):
             return False, f"A simulation with identical parameters already exists. Please modify parameters to create a unique simulation."
+        
+        # Check for name duplication (separate from parameter duplication)
+        if not allow_name_reuse:
+            # Check in-memory simulations for name conflicts
+            if any(sim.display_name == simulation.display_name for sim in self.simulations):
+                return False, f"A simulation with the name '{simulation.display_name}' already exists. Please choose a different name."
+            
+            # Also check names in filesystem simulations that might not be in memory
+            existing_names = self._get_existing_simulation_names()
+            if simulation.display_name in existing_names:
+                return False, f"A simulation with the name '{simulation.display_name}' already exists. Please choose a different name."
+        else:
+            # Even when allow_name_reuse=True, we should only allow it if we're updating the same simulation
+            # (i.e., there's already a simulation with the same hash in the suite)
+            # If there's no simulation with the same hash but there's one with the same name, it's still invalid
+            existing_sim_with_same_hash = any(sim.get_hash() == sim_hash for sim in self.simulations)
+            if not existing_sim_with_same_hash:
+                # This is a new simulation, so normal name validation applies
+                if any(sim.display_name == simulation.display_name for sim in self.simulations):
+                    return False, f"A simulation with the name '{simulation.display_name}' already exists. Please choose a different name."
+                
+                existing_names = self._get_existing_simulation_names()
+                if simulation.display_name in existing_names:
+                    return False, f"A simulation with the name '{simulation.display_name}' already exists. Please choose a different name."
         
         # Set the simulation's path to point to the suite directory
         simulation.simulations_path = self.suite_path
@@ -869,13 +948,14 @@ class SimulationSuite:
         
         return result
     
-    def save_simulation(self, simulation: Simulation, remove_old=False) -> Union[str, Tuple[bool, str]]:
+    def save_simulation(self, simulation: Simulation, remove_old=False, allow_name_reuse=False) -> Union[str, Tuple[bool, str]]:
         """
         Save a simulation to the suite.
         
         Args:
             simulation: The Simulation object to save
             remove_old: If True, attempt to remove any old simulation files that match the simulation's previous stored_hash
+            allow_name_reuse: If True, allows reusing the same name (for editing existing simulations)
             
         Returns:
             If successful: path where the simulation was saved
@@ -901,7 +981,7 @@ class SimulationSuite:
                 
         if not any(sim.get_hash() == sim_hash for sim in self.simulations):
             # Add to our set first (which will force-save and call _save_suite_config)
-            result = self.add_simulation(simulation)
+            result = self.add_simulation(simulation, allow_name_reuse=allow_name_reuse)
             # If add_simulation returned an error tuple, pass it along
             if isinstance(result, tuple) and result[0] is False:
                 return result

@@ -876,10 +876,12 @@ class SimulationWindow(QMainWindow):
                             debug_print(f"Using original hash for identity preservation")
                             
                             # Use remove_old=True to clean up old files with the original hash
-                            save_result = self.suite.save_simulation(self.simulation, remove_old=True)
+                            # Also allow name reuse since we're editing an existing simulation
+                            save_result = self.suite.save_simulation(self.simulation, remove_old=True, allow_name_reuse=True)
                         else:
                             # Hash didn't change - just save normally
-                            save_result = self.suite.save_simulation(self.simulation)
+                            # Also allow name reuse since we're editing an existing simulation
+                            save_result = self.suite.save_simulation(self.simulation, allow_name_reuse=True)
                             
                         # Check if save_result is an error tuple
                         if isinstance(save_result, tuple) and save_result[0] is False:
