@@ -451,8 +451,14 @@ class SimulationWindow(QMainWindow):
             if self.is_new:
                 # We're creating a new simulation
                 
-                # Create a new simulation with the data
+                # Separate user display name from simulation data
+                user_display_name = simulation_data.pop('display_name', 'simulation')
+                
+                # Create a new simulation with the data (display_name defaults to 'simulation')
                 new_simulation = Simulation(**simulation_data)
+                
+                # Set the user-facing display name after creation
+                new_simulation.display_name = user_display_name
                 
                 try:
                     # Add to the suite (which will check for hash conflicts)
@@ -546,12 +552,16 @@ class SimulationWindow(QMainWindow):
                         # User cancelled the name dialog
                         return False
                     
-                    # Update the display name in the simulation data
+                    # Separate user display name from simulation data
+                    user_display_name = simulation_data.pop('display_name', 'simulation')
                     if new_name:
-                        simulation_data['display_name'] = new_name
+                        user_display_name = new_name
                     
-                    # Create a new simulation with updated parameters
+                    # Create a new simulation with updated parameters (display_name defaults to 'simulation')
                     updated_simulation = Simulation(**simulation_data)
+                    
+                    # Set the user-facing display name after creation
+                    updated_simulation.display_name = user_display_name
                     
                     # Check if this exact configuration already exists
                     try:

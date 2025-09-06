@@ -2324,63 +2324,151 @@ class ResultsTabSuite(QWidget):
             file_path += '.pdf'
         
         try:
+            # Validate before creating PDF
+            if not self.selected_simulations:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "No Simulations Selected",
+                    "Please select at least one simulation to export template plots."
+                )
+                return
+                
+            # Get first valid sim hash to use as reference
+            ref_sim_hash = None
+            for sim_hash in self.selected_simulations:
+                if sim_hash in self.simulation_data:
+                    ref_sim_hash = sim_hash
+                    break
+                    
+            if not ref_sim_hash:
+                debug_print("No valid simulations found")
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "No Valid Simulations",
+                    "No valid simulation data found for the selected simulations."
+                )
+                return
+            
             # Create a PdfPages object
             with PdfPages(file_path) as pdf:
-                # Get a representative simulation
-                if not self.selected_simulations:
-                    return
-                    
-                # Get first valid sim hash to use as reference
-                ref_sim_hash = None
-                for sim_hash in self.selected_simulations:
-                    if sim_hash in self.simulation_data:
-                        ref_sim_hash = sim_hash
-                        break
-                        
-                if not ref_sim_hash:
-                    debug_print("No valid simulations found")
-                    return
                     
                 ref_sim_data = self.simulation_data[ref_sim_hash]
                 ref_display_name = ref_sim_data.get('display_name', f"Sim_{ref_sim_hash[:8]}")
                 
-                # Create the new 3x3 template plot
-                self._create_template_3x3_plot(pdf, ref_sim_hash, "Multiple Simulations")
+                # Track if we successfully create any plots
+                plots_created = 0
                 
-                # Also create channel dependency plots for each simulation
-                for sim_hash in self.selected_simulations:
-                    if sim_hash not in self.simulation_data:
-                        continue
-                        
-                    sim_data = self.simulation_data[sim_hash]
-                    display_name = sim_data.get('display_name', f"Sim_{sim_hash[:8]}")
+                # Create the new 3x3 template plot
+                try:
+                    self._create_template_3x3_plot(pdf, ref_sim_hash, "Multiple Simulations")
+                    plots_created += 1
+                except Exception as e:
+                    debug_print(f"Error creating 3x3 template plot: {str(e)}")
+                
+                # Create additional flux plots for channels not in the main 3x3 grid
+                try:
+                    self._create_additional_flux_plots_only(pdf, "All Selected Simulations")
+                    plots_created += 1
+                except Exception as e:
+                    debug_print(f"Error creating additional flux plots: {str(e)}")
+                
+                # If no plots were created, create a summary page
+                if plots_created == 0:
+                    debug_print("No plots were created, generating summary page")
+                    fig, ax = plt.subplots(1, 1, figsize=(8, 10))
                     
-                    # Check if simulation has been run
-                    if not sim_data.get('has_run', False):
-                        debug_print(f"Skipping unrun simulation for dependency plots: {display_name}")
-                        continue
+                    summary_text = f"Export Summary\n\n"
+                    summary_text += f"Selected Simulations: {len(self.selected_simulations)}\n\n"
                     
-                    # Create channel dependency plots for this simulation
-                    self._create_channel_dependency_plots(pdf, sim_hash, display_name)
+                    for i, sim_hash in enumerate(self.selected_simulations[:10], 1):
+                        if sim_hash in self.simulation_data:
+                            sim_data = self.simulation_data[sim_hash]
+                            display_name = sim_data.get('display_name', f"Sim_{sim_hash[:8]}")
+                            has_run = sim_data.get('has_run', False)
+                            available_vars = len(sim_data.get('available_histories', []))
+                            summary_text += f"{i}. {display_name}\n"
+                            summary_text += f"   Status: {'Run' if has_run else 'Not run'}\n"
+                            summary_text += f"   Variables: {available_vars}\n\n"
+                    
+                    if len(self.selected_simulations) > 10:
+                        summary_text += f"... and {len(self.selected_simulations) - 10} more simulations\n\n"
+                    
+                    summary_text += "Note: No plots could be generated.\nThis may be due to missing data or unrun simulations."
+                    
+                    ax.text(0.1, 0.9, summary_text, ha='left', va='top', fontsize=10, 
+                           transform=ax.transAxes, wrap=True)
+                    ax.set_xlim(0, 1)
+                    ax.set_ylim(0, 1)
+                    ax.axis('off')
+                    plt.title("Template Export Summary", fontsize=16)
+                    pdf.savefig(fig)
+                    plt.close(fig)
                 
                 # Set PDF metadata
                 d = pdf.infodict()
                 d['Title'] = 'Simulation Template Plots'
                 d['Subject'] = 'Standard 3x3 grid plots for all simulations'
+                
+            # Success message
+            debug_print(f"Template plots successfully exported to: {file_path}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Template plots have been successfully exported to:\n{file_path}"
+            )
         
         except Exception as e:
             debug_print(f"Error exporting template plots: {str(e)}")
             import traceback
             traceback.print_exc()
+            
+            # Show error message to user
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export template plots:\n{str(e)}"
+            )
 
-    def _create_template_3x3_plot(self, pdf, sim_hash, display_name):
-        """Create a 3x3 grid of plots with the specified layout"""
-        sim_data = self.simulation_data[sim_hash]
-        available_histories = sim_data.get('available_histories', [])
+    def _create_template_3x3_plot(self, pdf, ref_sim_hash, display_name):
+        """Create a 3x3 grid of plots with the specified layout for all selected simulations"""
+        # Get available variables from all selected simulations (union)
+        all_available_histories = set()
+        for sim_hash in self.selected_simulations:
+            if sim_hash in self.simulation_data:
+                sim_data = self.simulation_data[sim_hash]
+                sim_histories = set(sim_data.get('available_histories', []))
+                all_available_histories |= sim_histories
         
-        # Check if we have required data
-        if 'simulation_time' not in available_histories:
+        available_histories = list(all_available_histories)
+        
+        # Check if we have required time data (try multiple possible names)
+        time_var = None
+        possible_time_vars = ['simulation_time', 'time'] + [var for var in available_histories if var.endswith('_time')]
+        for var_name in possible_time_vars:
+            if var_name in available_histories:
+                time_var = var_name
+                break
+                
+        if time_var is None:
+            debug_print(f"Warning: No time data found for {display_name}")
+            # Create an error page instead of returning empty
+            fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+            ax.text(0.5, 0.5, f"No time data available for:\n{display_name}\n\nAvailable variables:\n" + 
+                    "\n".join(available_histories[:10]) + ("..." if len(available_histories) > 10 else ""),
+                   ha='center', va='center', fontsize=12)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            plt.title(f"Data Issue: {display_name}", fontsize=14)
+            pdf.savefig(fig)
+            plt.close(fig)
             return
+        
+        debug_print(f"Using time variable: {time_var} for {display_name}")
         
         # Find the unaccounted ion concentration variable (it could have different prefixes)
         unaccounted_ion_var = None
@@ -2426,13 +2514,21 @@ class ResultsTabSuite(QWidget):
         
         # Create figure with square subplots - 3x3 grid
         fig, axs = plt.subplots(3, 3, figsize=(15, 15))  # Square figure with square subplots
-        fig.suptitle(f"Simulation Template: {display_name}", fontsize=16)
+        
+        # Create title showing number of selected simulations
+        num_selected = len(self.selected_simulations)
+        if num_selected == 1:
+            sim_data = self.simulation_data[self.selected_simulations[0]]
+            sim_name = sim_data.get('display_name', f"Sim_{self.selected_simulations[0][:8]}")
+            fig.suptitle(f"Simulation Template: {sim_name}", fontsize=16)
+        else:
+            fig.suptitle(f"Simulation Template: {num_selected} Selected Simulations", fontsize=16)
         
         # Define colors for different simulations
         sim_colors = ['b', 'r', 'g', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive', 'cyan']
         
-        # Get all simulation hashes to plot
-        sim_hash_list = [sim_hash] + [h for h in self.selected_simulations if h != sim_hash]
+        # Get all simulation hashes to plot (use all selected simulations)
+        sim_hash_list = list(self.selected_simulations)
         
         # Process each plot in the 3x3 grid
         for plot_config in plots_config:
@@ -2468,12 +2564,19 @@ class ResultsTabSuite(QWidget):
                             current_unaccounted_var = var_name
                             break
                     
+                    # Find time variable for this specific simulation
+                    current_time_var = None
+                    for var_name in possible_time_vars:
+                        if var_name in current_available_histories:
+                            current_time_var = var_name
+                            break
+                    
                     # Skip if this simulation doesn't have the required data
-                    if 'simulation_time' not in current_available_histories or current_unaccounted_var is None:
+                    if current_time_var is None or current_unaccounted_var is None:
                         continue
                     
-                    # Get time and variable data using the normalized name (which will be mapped back)
-                    time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                    # Get time and variable data using the actual variable names
+                    time_data = self.get_simulation_variable(current_sim_hash, 'time')
                     var_data = self.get_simulation_variable(current_sim_hash, 'unaccounted_ion_conc')  # Use normalized name
                     
                     if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
@@ -2522,12 +2625,19 @@ class ResultsTabSuite(QWidget):
                     current_sim_data = self.simulation_data[current_sim_hash]
                     current_available_histories = current_sim_data.get('available_histories', [])
                     
+                    # Find time variable for this specific simulation
+                    current_time_var = None
+                    for var_name in possible_time_vars:
+                        if var_name in current_available_histories:
+                            current_time_var = var_name
+                            break
+                    
                     # Skip if this simulation doesn't have the required data
-                    if 'simulation_time' not in current_available_histories or plot_config['var'] not in current_available_histories:
+                    if current_time_var is None or plot_config['var'] not in current_available_histories:
                         continue
                     
                     # Get time and variable data
-                    time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                    time_data = self.get_simulation_variable(current_sim_hash, 'time')
                     var_data = self.get_simulation_variable(current_sim_hash, plot_config['var'])
                     
                     if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
@@ -2553,6 +2663,127 @@ class ResultsTabSuite(QWidget):
         # If we have additional flux plots (NHE, V-ATPase), create a separate page
         if additional_fluxes:
             self._create_additional_flux_plots(pdf, sim_hash, display_name, additional_fluxes)
+
+    def _create_additional_flux_plots_only(self, pdf, display_name):
+        """Create flux plots only for channels not included in the main 3x3 grid"""
+        # Get available variables from all selected simulations
+        all_available_histories = set()
+        for sim_hash in self.selected_simulations:
+            if sim_hash in self.simulation_data:
+                sim_data = self.simulation_data[sim_hash]
+                sim_histories = set(sim_data.get('available_histories', []))
+                all_available_histories |= sim_histories
+        
+        available_histories = list(all_available_histories)
+        
+        # Find all flux variables
+        flux_vars = [var for var in available_histories if var.endswith('_flux')]
+        
+        # Channels already included in the main 3x3 grid
+        main_grid_channels = ['asor_flux', 'tpc_flux']  # These are in the main grid
+        
+        # Filter out flux variables that are already in the main grid
+        additional_flux_vars = [var for var in flux_vars if var not in main_grid_channels]
+        
+        if not additional_flux_vars:
+            debug_print("No additional flux variables found (beyond main grid)")
+            return
+        
+        # Group flux variables by type
+        flux_groups = {}
+        for flux_var in additional_flux_vars:
+            # Extract channel name (remove _flux suffix)
+            channel_name = flux_var.replace('_flux', '').upper()
+            if channel_name not in flux_groups:
+                flux_groups[channel_name] = []
+            flux_groups[channel_name].append(flux_var)
+        
+        # Calculate number of subplots needed
+        num_fluxes = len(flux_groups)
+        if num_fluxes == 0:
+            return
+            
+        # Create subplots (up to 3x3 = 9 per page)
+        plots_per_page = 9
+        num_pages = (num_fluxes + plots_per_page - 1) // plots_per_page
+        
+        flux_items = list(flux_groups.items())
+        
+        for page in range(num_pages):
+            start_idx = page * plots_per_page
+            end_idx = min(start_idx + plots_per_page, num_fluxes)
+            page_fluxes = flux_items[start_idx:end_idx]
+            
+            # Calculate subplot grid
+            num_plots = len(page_fluxes)
+            if num_plots <= 3:
+                rows, cols = 1, num_plots
+            elif num_plots <= 6:
+                rows, cols = 2, 3
+            else:
+                rows, cols = 3, 3
+            
+            fig, axs = plt.subplots(rows, cols, figsize=(15, 12))
+            if num_pages > 1:
+                fig.suptitle(f"Additional Channel Fluxes: {display_name} (Page {page + 1}/{num_pages})", fontsize=16)
+            else:
+                fig.suptitle(f"Additional Channel Fluxes: {display_name}", fontsize=16)
+            
+            # Ensure axs is always 2D array
+            if rows == 1 and cols == 1:
+                axs = [[axs]]
+            elif rows == 1 or cols == 1:
+                axs = axs.reshape(rows, cols)
+            
+            # Define colors for different simulations
+            sim_colors = ['b', 'r', 'g', 'purple', 'orange', 'brown', 'pink', 'gray', 'olive', 'cyan']
+            
+            # Plot each flux
+            for plot_idx, (channel_name, flux_variables) in enumerate(page_fluxes):
+                row = plot_idx // cols
+                col = plot_idx % cols
+                ax = axs[row, col]
+                
+                ax.set_title(f'{channel_name} Flux vs Time', fontsize=12)
+                ax.set_xlabel('Time (s)', fontsize=10)
+                ax.set_ylabel('Flux (mol/s)', fontsize=10)
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Plot each simulation
+                for i, sim_hash in enumerate(self.selected_simulations):
+                    if sim_hash not in self.simulation_data:
+                        continue
+                        
+                    sim_data = self.simulation_data[sim_hash]
+                    sim_name = sim_data.get('display_name', f"Sim_{sim_hash[:8]}")
+                    color = sim_colors[i % len(sim_colors)]
+                    
+                    # Get time data
+                    time_data = self.get_simulation_variable(sim_hash, 'time')
+                    if time_data is None:
+                        continue
+                    
+                    # Plot flux data (use first available flux variable for this channel)
+                    for flux_var in flux_variables:
+                        if flux_var in sim_data.get('available_histories', []):
+                            flux_data = self.get_simulation_variable(sim_hash, flux_var)
+                            if flux_data is not None and len(flux_data) > 0:
+                                ax.plot(time_data, flux_data, color=color, label=f"{sim_name}", linewidth=1.5)
+                                break
+                
+                # Add legend if there are multiple simulations
+                if len(self.selected_simulations) > 1 and ax.get_legend_handles_labels()[0]:
+                    ax.legend(fontsize='x-small')
+            
+            # Hide unused subplots
+            for plot_idx in range(len(page_fluxes), rows * cols):
+                row = plot_idx // cols
+                col = plot_idx % cols
+                axs[row, col].set_visible(False)
+            
+            plt.tight_layout(rect=[0, 0.03, 1, 0.96])
+            pdf.savefig(fig)
+            plt.close(fig)
     
     def _create_additional_flux_plots(self, pdf, sim_hash, display_name, additional_fluxes):
         """Create additional flux plots in a 3x3 grid layout for CLC_H, NHE, NHE_H, and V-ATPase if they exist"""
