@@ -807,8 +807,8 @@ class ResultsTabSuite(QWidget):
             
             # If we have data, set labels and title
             if all_plot_data:
-                graph.axes.set_xlabel(x_var)
-                graph.axes.set_ylabel(y_var)
+                graph.axes.set_xlabel(selected['x_label'])
+                graph.axes.set_ylabel(selected['y_label'])
                 graph.axes.set_title(selected['title'])
                 
                 # Plot each group with consistent styling
