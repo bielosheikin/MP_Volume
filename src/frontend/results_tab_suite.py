@@ -514,7 +514,16 @@ class ResultsTabSuite(QWidget):
             history_file = os.path.join(histories_dir, f"{actual_var_name}.npy")
             
             if os.path.exists(history_file):
-                data = np.load(history_file)
+                try:
+                    data = np.load(history_file)
+                except ValueError as e:
+                    if "Object arrays cannot be loaded when allow_pickle=False" in str(e):
+                        # Handle object arrays (e.g., arrays with None values)
+                        data = np.load(history_file, allow_pickle=True)
+                        # Convert None values to NaN for plotting
+                        data = np.array([np.nan if x is None else x for x in data], dtype=float)
+                    else:
+                        raise e
                 
                 # Sample the data if it's too large (more than 5000 points)
                 # This reduces memory usage and speeds up plotting
