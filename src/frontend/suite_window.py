@@ -153,7 +153,12 @@ class SuiteWindow(QMainWindow):
         
         # Suite name label
         suite_label = QLabel(f"Simulation Suite: {self.suite_name}")
-        suite_label.setFont(QFont("Arial", 14, QFont.Bold))
+        # Use application font but make it bold and slightly larger
+        app_font = QApplication.instance().font()
+        header_font = QFont(app_font)
+        header_font.setPointSize(app_font.pointSize() + 4)  # 4 points larger than app font
+        header_font.setBold(True)
+        suite_label.setFont(header_font)
         header_layout.addWidget(suite_label, 1)
         
         # Add back button

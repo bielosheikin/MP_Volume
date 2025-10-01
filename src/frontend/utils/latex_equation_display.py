@@ -46,15 +46,19 @@ class LatexEquationDisplay(QWidget):
         equation_label.setAlignment(Qt.AlignLeft)
         equation_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
-        # Set a style sheet for better table rendering
-        equation_label.setStyleSheet("""
-            QLabel {
+        # Set a style sheet for better table rendering with relative font size
+        from PyQt5.QtWidgets import QApplication
+        app_font_size = QApplication.instance().font().pointSize()
+        equation_font_size = app_font_size + 1  # Slightly larger than app font
+        
+        equation_label.setStyleSheet(f"""
+            QLabel {{
                 font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 11pt;
+                font-size: {equation_font_size}pt;
                 padding: 4px;
                 background-color: transparent;
                 line-height: 1.5;
-            }
+            }}
             
             QLabel table {
                 border-collapse: collapse;

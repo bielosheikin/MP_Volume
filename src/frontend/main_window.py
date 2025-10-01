@@ -30,11 +30,7 @@ class SimulationGUI(QMainWindow):
         self.setWindowTitle("Simulation GUI")
         self.setGeometry(100, 100, 1024, 768)  # Larger default window size
         
-        # Set application-wide font
-        app = QApplication.instance()
-        font = QFont()
-        font.setPointSize(10)  # Larger font size
-        app.setFont(font)
+        # Application-wide font is set in app.py, no need to set it here
         
         # Initialize channel parameters dictionary
         self.channel_parameters = {}

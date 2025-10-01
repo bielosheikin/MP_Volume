@@ -23,7 +23,7 @@ MAX_HISTORY_PLOT_POINTS = 10000
 
 # Maximum number of points to save in histories
 # This parameter controls how many points are saved to the .npy files
-MAX_HISTORY_SAVE_POINTS = 1e6
+MAX_HISTORY_SAVE_POINTS = 1000000
 
 # Function to get the global suites directory from settings
 def get_suites_directory():
@@ -36,3 +36,14 @@ def set_suites_directory(directory):
     """Set the global directory for all simulation suites"""
     settings = QSettings("MP_Volume", "SimulationApp")
     settings.setValue("suites_directory", directory)
+
+# Font size settings
+def get_font_size():
+    """Get the global font size setting"""
+    settings = QSettings("MP_Volume", "SimulationApp")
+    return settings.value("font_size", 10, type=int)
+
+def set_font_size(size):
+    """Set the global font size setting"""
+    settings = QSettings("MP_Volume", "SimulationApp")
+    settings.setValue("font_size", size)

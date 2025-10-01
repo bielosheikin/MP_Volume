@@ -17,9 +17,10 @@ if os.path.exists(src_dir) and src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QFont
 
 from src.frontend.suite_manager_window import SuiteManagerWindow
-from src.app_settings import DEBUG_LOGGING, MAX_HISTORY_PLOT_POINTS, MAX_HISTORY_SAVE_POINTS
+from src.app_settings import DEBUG_LOGGING, MAX_HISTORY_PLOT_POINTS, MAX_HISTORY_SAVE_POINTS, get_font_size
 
 
 if __name__ == "__main__":
@@ -32,6 +33,13 @@ if __name__ == "__main__":
     print()
     
     app = QApplication(sys.argv)
+    
+    # Set application-wide font size from settings
+    font_size = get_font_size()
+    font = QFont()
+    font.setPointSize(font_size)
+    app.setFont(font)
+    
     manager = SuiteManagerWindow()
     manager.show()
     sys.exit(app.exec_())
