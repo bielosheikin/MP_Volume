@@ -282,8 +282,10 @@ class Simulation(Configurable, Trackable):
         # Locate hydrogen species if available
         hydrogen_species = next((s for s in self.all_species if s.display_name == 'h'), None)
         if hydrogen_species:
-            flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc *  self.buffer_capacity
-            flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * self.init_buffer_capacity
+            
+            flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * 1 / self.buffer_capacity
+            flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * 1 / self.init_buffer_capacity
+
         else:
             # Check if any channel requires free hydrogen
             if any(channel.config.use_free_hydrogen for channel in [ch for sp in self.all_species for ch in sp.channels]):
@@ -336,7 +338,7 @@ class Simulation(Configurable, Trackable):
         self.vesicle.voltage = self.vesicle.charge / self.vesicle.capacitance
 
     def update_buffer(self):
-        self.buffer_capacity = self.init_buffer_capacity * self.vesicle.volume / self.vesicle.init_volume
+        self.buffer_capacity = self.init_buffer_capacity * (self.vesicle.init_volume / self.vesicle.volume)
 
     def update_pH(self):
         """Update the pH based on the free hydrogen concentration in the vesicle."""
@@ -345,7 +347,7 @@ class Simulation(Configurable, Trackable):
     
         if hydrogen_species:
             # Calculate free hydrogen in the vesicle using buffer capacity
-            free_hydrogen_conc = hydrogen_species.vesicle_conc * self.buffer_capacity
+            free_hydrogen_conc = hydrogen_species.vesicle_conc * 1 / self.buffer_capacity
             
             # Ensure free_hydrogen_conc is positive
             if free_hydrogen_conc <= 0:
