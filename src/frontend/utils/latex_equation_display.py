@@ -60,20 +60,20 @@ class LatexEquationDisplay(QWidget):
                 line-height: 1.5;
             }}
             
-            QLabel table {
+            QLabel table {{
                 border-collapse: collapse;
                 display: inline-table;
                 vertical-align: middle;
                 margin: 0;
                 padding: 0;
-            }
+            }}
             
-            QLabel td {
+            QLabel td {{
                 text-align: center;
                 vertical-align: middle;
                 padding: 2px;
                 white-space: nowrap;
-            }
+            }}
         """)
         
         # Set the equation content
