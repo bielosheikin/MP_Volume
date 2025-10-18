@@ -1779,6 +1779,13 @@ class ResultsTabSuite(QWidget):
             debug_print("No graphs available to export")
             return
         
+        # Progress dialog setup
+        progress = QProgressDialog("Exporting graphs to PDF...", None, 0, 100, self)
+        progress.setWindowTitle("Exporting")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(0)
+        QApplication.processEvents()
+
         # Ask user where to save the PDF
         file_path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1789,6 +1796,7 @@ class ResultsTabSuite(QWidget):
         
         if not file_path:
             # User canceled
+            progress.close()
             return
         
         # Ensure the filename has .pdf extension
@@ -1803,7 +1811,39 @@ class ResultsTabSuite(QWidget):
                 total_graphs = len(graphs_with_data)
                 
                 if total_graphs == 0:
-                    debug_print("No graphs with data to export")
+                    # No plotted graphs – still export a summary page and parameter tables
+                    debug_print("No graphs with data to export; creating summary and parameter tables only")
+                    progress.setLabelText("Writing summary page...")
+                    progress.setValue(25)
+                    QApplication.processEvents()
+                    fig = plt.figure(figsize=(8, 6))
+                    ax = fig.add_subplot(111)
+                    ax.axis('off')
+                    ax.text(0.5, 0.6, "No graphs were plotted",
+                            ha='center', va='center', fontsize=14, fontweight='bold')
+                    ax.text(0.5, 0.45, "Parameter tables for selected simulations follow.",
+                            ha='center', va='center', fontsize=10)
+                    pdf.savefig(fig)
+                    plt.close(fig)
+
+                    # Always include parameter tables
+                    progress.setLabelText("Adding parameter tables...")
+                    progress.setValue(60)
+                    QApplication.processEvents()
+                    self._add_parameter_tables_to_pdf(pdf)
+
+                    # Set PDF metadata
+                    d = pdf.infodict()
+                    d['Title'] = 'Simulation Results'
+                    d['Subject'] = 'Parameters for selected simulations'
+                    d['Keywords'] = 'matplotlib, simulations, parameters'
+                    d['Creator'] = 'MP Volume Simulator'
+
+                    debug_print(f"Parameter tables exported to PDF: {file_path}")
+                    progress.setValue(100)
+                    progress.close()
+                    from PyQt5.QtWidgets import QMessageBox
+                    QMessageBox.information(self, "Export Complete", f"Exported parameter tables to:\n{file_path}")
                     return
                 
                 # Determine how many pages we need
@@ -1811,9 +1851,14 @@ class ResultsTabSuite(QWidget):
                 num_pages = (total_graphs + graphs_per_page - 1) // graphs_per_page
                 
                 debug_print(f"Exporting {total_graphs} graphs to {num_pages} pages")
+                progress.setLabelText("Exporting graphs...")
+                progress.setValue(5)
+                QApplication.processEvents()
                 
                 # Process each page
                 for page in range(num_pages):
+                    progress.setValue(5 + int(80 * (page / max(1, num_pages))))
+                    QApplication.processEvents()
                     # Get graphs for this page
                     start_idx = page * graphs_per_page
                     end_idx = min(start_idx + graphs_per_page, total_graphs)
@@ -1966,6 +2011,9 @@ class ResultsTabSuite(QWidget):
                     plt.close(fig)
                 
                 # Add parameter tables after the graphs
+                progress.setLabelText("Adding parameter tables...")
+                progress.setValue(90)
+                QApplication.processEvents()
                 self._add_parameter_tables_to_pdf(pdf)
                 
                 # Set PDF metadata
@@ -1976,11 +2024,16 @@ class ResultsTabSuite(QWidget):
                 d['Creator'] = 'MP Volume Simulator'
             
             debug_print(f"All graphs and parameter tables exported to PDF: {file_path}")
+            progress.setValue(100)
+            progress.close()
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Export Complete", f"Exported graphs and parameters to:\n{file_path}")
                 
         except Exception as e:
             debug_print(f"Error exporting graphs to PDF: {str(e)}")
             import traceback
             traceback.print_exc() 
+            progress.close()
 
     def export_parameters_to_csv(self):
         """Export parameters for all selected simulations to a CSV file"""
@@ -2005,6 +2058,14 @@ class ResultsTabSuite(QWidget):
             file_path += '.csv'
         
         try:
+            # Progress dialog
+            progress = QProgressDialog("Exporting parameters...", None, 0, 100, self)
+            progress.setWindowTitle("Exporting Parameters")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setValue(10)
+            progress.show()
+            QApplication.processEvents()
+            
             # Get all selected simulations and their parameters
             all_simulations = []
             simulation_names = []
@@ -2027,6 +2088,10 @@ class ResultsTabSuite(QWidget):
                             all_parameters[section_title][param_name] = {}
                         
                         all_parameters[section_title][param_name][display_name] = param_value
+            
+            progress.setLabelText("Writing CSV file...")
+            progress.setValue(60)
+            QApplication.processEvents()
             
             # Open file and write CSV
             with open(file_path, 'w', newline='') as csvfile:
@@ -2057,6 +2122,11 @@ class ResultsTabSuite(QWidget):
                     
                     # Add blank row after section
                     writer.writerow([])
+            
+            progress.setValue(100)
+            progress.close()
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Export Complete", f"Parameters exported to:\n{file_path}")
             
             debug_print(f"Parameters exported to {file_path}")
             
@@ -2295,6 +2365,9 @@ class ResultsTabSuite(QWidget):
             
             # Ensure progress dialog is closed
             progress.setValue(total_progress)
+            progress.close()
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Export Complete", f"Histories exported to:\n{export_dir}")
             
             debug_print(f"All history variables exported to {export_dir}")
                 
@@ -2343,6 +2416,14 @@ class ResultsTabSuite(QWidget):
                 )
                 return
                 
+            # Progress dialog
+            progress = QProgressDialog("Exporting template plots...", None, 0, 100, self)
+            progress.setWindowTitle("Exporting")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+            
             # Get first valid sim hash to use as reference
             ref_sim_hash = None
             for sim_hash in self.selected_simulations:
@@ -2358,6 +2439,7 @@ class ResultsTabSuite(QWidget):
                     "No Valid Simulations",
                     "No valid simulation data found for the selected simulations."
                 )
+                progress.close()
                 return
             
             # Create a PdfPages object
@@ -2371,6 +2453,9 @@ class ResultsTabSuite(QWidget):
                 
                 # Create the new 3x3 template plot
                 try:
+                    progress.setLabelText("Generating 3x3 template page...")
+                    progress.setValue(30)
+                    QApplication.processEvents()
                     self._create_template_3x3_plot(pdf, ref_sim_hash, "Multiple Simulations")
                     plots_created += 1
                 except Exception as e:
@@ -2378,6 +2463,9 @@ class ResultsTabSuite(QWidget):
                 
                 # Create additional flux plots for channels not in the main 3x3 grid
                 try:
+                    progress.setLabelText("Generating additional flux pages...")
+                    progress.setValue(60)
+                    QApplication.processEvents()
                     self._create_additional_flux_plots_only(pdf, "All Selected Simulations")
                     plots_created += 1
                 except Exception as e:
@@ -2419,16 +2507,15 @@ class ResultsTabSuite(QWidget):
                 d = pdf.infodict()
                 d['Title'] = 'Simulation Template Plots'
                 d['Subject'] = 'Standard 3x3 grid plots for all simulations'
-                
+            
+            progress.setValue(100)
+            progress.close()
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Export Complete", f"Template plots exported to:\n{file_path}")
+            
             # Success message
             debug_print(f"Template plots successfully exported to: {file_path}")
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self,
-                "Export Complete",
-                f"Template plots have been successfully exported to:\n{file_path}"
-            )
-        
+            
         except Exception as e:
             debug_print(f"Error exporting template plots: {str(e)}")
             import traceback
@@ -2585,7 +2672,7 @@ class ResultsTabSuite(QWidget):
                         continue
                     
                     # Get time and variable data using the actual variable names
-                    time_data = self.get_simulation_variable(current_sim_hash, 'time')
+                    time_data = self.get_simulation_variable(current_sim_hash, current_time_var)
                     var_data = self.get_simulation_variable(current_sim_hash, 'unaccounted_ion_conc')  # Use normalized name
                     
                     if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
@@ -2646,7 +2733,7 @@ class ResultsTabSuite(QWidget):
                         continue
                     
                     # Get time and variable data
-                    time_data = self.get_simulation_variable(current_sim_hash, 'time')
+                    time_data = self.get_simulation_variable(current_sim_hash, current_time_var)
                     var_data = self.get_simulation_variable(current_sim_hash, plot_config['var'])
                     
                     if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
@@ -2671,7 +2758,8 @@ class ResultsTabSuite(QWidget):
         
         # If we have additional flux plots (NHE, V-ATPase), create a separate page
         if additional_fluxes:
-            self._create_additional_flux_plots(pdf, sim_hash, display_name, additional_fluxes)
+            # Use the reference simulation hash for additional flux plots
+            self._create_additional_flux_plots(pdf, ref_sim_hash, display_name, additional_fluxes)
 
     def _create_additional_flux_plots_only(self, pdf, display_name):
         """Create flux plots only for channels not included in the main 3x3 grid"""
