@@ -75,6 +75,7 @@ default_channels = {
         primary_exponent=1,
         time_exponent=0.0,
         half_act_time=0.0,
+        use_free_hydrogen=True,
         display_name='VATPase'
     ),
     "clc_h": IonChannel(
