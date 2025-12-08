@@ -14,7 +14,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
 
-from ..backend.simulation import Simulation
+from ..backend.simulation import (
+    Simulation,
+    BUFFER_CAPACITY_CONVERSION_FACTOR,
+    DEFAULT_BUFFER_CAPACITY_MMP_PER_PH,
+)
 from ..backend.simulation_suite import SimulationSuite
 from ..backend.ion_species import IonSpecies
 from ..backend.ion_channels import IonChannel
@@ -233,6 +237,9 @@ class SimulationWindow(QMainWindow):
             sim_params = {
                 "time_step": self.simulation.time_step,
                 "total_time": self.simulation.total_time,
+                "adaptive_time_step": getattr(self.simulation, "adaptive_time_step", False),
+                "max_time_step": getattr(self.simulation, "max_time_step", max(self.simulation.time_step * 10, 0.01)),
+                "adaptive_change_tolerance": getattr(self.simulation, "adaptive_change_tolerance", 0.02),
             }
             self.simulation_params_tab.set_data(sim_params)
             
@@ -257,11 +264,20 @@ class SimulationWindow(QMainWindow):
             
             self.ion_species_tab.set_data(ion_species_data)
             
+            # Derive buffer capacity values for UI (both inverse and physical units)
+            buffer_capacity_inverse = self.simulation.init_buffer_capacity
+            buffer_capacity_beta_mM = getattr(self.simulation, "buffer_capacity_beta_mM_per_pH", None)
+            if buffer_capacity_beta_mM is None and buffer_capacity_inverse not in (None, 0):
+                buffer_capacity_beta_mM = 1.0 / (buffer_capacity_inverse * BUFFER_CAPACITY_CONVERSION_FACTOR)
+            if buffer_capacity_beta_mM is None:
+                buffer_capacity_beta_mM = DEFAULT_BUFFER_CAPACITY_MMP_PER_PH
+
             # Now populate the vesicle tab with calculated pH
             vesicle_data = {
                 "vesicle_params": self.simulation.vesicle_params,
                 "exterior_params": self.simulation.exterior_params,
-                "init_buffer_capacity": self.simulation.init_buffer_capacity
+                "init_buffer_capacity": buffer_capacity_inverse,
+                "buffer_capacity_beta_mM_per_pH": buffer_capacity_beta_mM
             }
             
             # Add calculated vesicle pH if we have hydrogen species
@@ -332,9 +348,18 @@ class SimulationWindow(QMainWindow):
             if not vesicle_data:
                 return None
             
-            # Extract init_buffer_capacity and init_vesicle_pH from vesicle_data
-            init_buffer_capacity = vesicle_data.pop("init_buffer_capacity", 5e-4)  # Default if not provided
+            # Extract buffer capacity inputs and initial vesicle pH from vesicle_data
+            init_buffer_capacity = vesicle_data.pop("init_buffer_capacity", None)
+            buffer_capacity_beta_mM = vesicle_data.pop("buffer_capacity_beta_mM_per_pH", None)
             init_vesicle_pH = vesicle_data.pop("init_vesicle_pH", None)
+
+            if init_buffer_capacity is None and buffer_capacity_beta_mM is None:
+                buffer_capacity_beta_mM = DEFAULT_BUFFER_CAPACITY_MMP_PER_PH
+                init_buffer_capacity = 1.0 / (buffer_capacity_beta_mM * BUFFER_CAPACITY_CONVERSION_FACTOR)
+            elif init_buffer_capacity is None:
+                init_buffer_capacity = 1.0 / (buffer_capacity_beta_mM * BUFFER_CAPACITY_CONVERSION_FACTOR)
+            elif buffer_capacity_beta_mM is None:
+                buffer_capacity_beta_mM = 1.0 / (init_buffer_capacity * BUFFER_CAPACITY_CONVERSION_FACTOR)
             
             # Get ion species data
             ion_species_data_plain = self.ion_species_tab.get_data()
@@ -426,7 +451,8 @@ class SimulationWindow(QMainWindow):
                 "species": ion_species_data,
                 "ion_channel_links": ion_channel_links,
                 **vesicle_data,  # vesicle_params and exterior_params
-                "init_buffer_capacity": init_buffer_capacity,  # Add buffer capacity
+                "init_buffer_capacity": init_buffer_capacity,  # Legacy inverse (1/beta) for backend
+                "buffer_capacity_beta_mM_per_pH": buffer_capacity_beta_mM,
                 "init_vesicle_pH": init_vesicle_pH  # Add vesicle pH for future reference
             }
             
@@ -627,6 +653,18 @@ class SimulationWindow(QMainWindow):
                     # Update time step and total time
                     self.simulation.time_step = simulation_data.get('time_step', self.simulation.time_step)
                     self.simulation.total_time = simulation_data.get('total_time', self.simulation.total_time)
+                    self.simulation.adaptive_time_step = simulation_data.get('adaptive_time_step', getattr(self.simulation, "adaptive_time_step", False))
+                    self.simulation.max_time_step = max(
+                        simulation_data.get('max_time_step', getattr(self.simulation, "max_time_step", self.simulation.time_step)),
+                        self.simulation.time_step
+                    )
+                    self.simulation.adaptive_change_tolerance = simulation_data.get(
+                        'adaptive_change_tolerance',
+                        getattr(self.simulation, "adaptive_change_tolerance", 0.02)
+                    )
+                    # Reset runtime stepping helpers
+                    self.simulation.minimum_time_step = self.simulation.time_step
+                    self.simulation.current_time_step = self.simulation.time_step
                     
                     # Recalculate iter_num based on updated time_step and total_time
                     self.simulation.iter_num = int(self.simulation.total_time / self.simulation.time_step)
@@ -643,8 +681,12 @@ class SimulationWindow(QMainWindow):
                     # Reset current iteration counter
                     self.simulation.current_iteration = 0
                     
-                    # Update buffer capacity
-                    self.simulation.init_buffer_capacity = simulation_data.get('init_buffer_capacity', self.simulation.init_buffer_capacity)
+                    # Update buffer capacity (supports legacy and new formats)
+                    self.simulation._initialize_buffer_capacity_values(
+                        simulation_data.get('init_buffer_capacity'),
+                        simulation_data.get('buffer_capacity_beta_mM_per_pH')
+                    )
+                    self.simulation.buffer_capacity = self.simulation.init_buffer_capacity
                     
                     # Update vesicle parameters
                     if 'vesicle_params' in simulation_data:
@@ -1084,7 +1126,7 @@ class SimulationWindow(QMainWindow):
         # Compare key parameters with the original simulation
         try:
             # Check basic scalar parameters (name from header input, time_step and total_time from the tab)
-            basic_params = ['display_name', 'time_step', 'total_time']
+            basic_params = ['display_name', 'time_step', 'total_time', 'adaptive_time_step', 'max_time_step', 'adaptive_change_tolerance']
             
             for param in basic_params:
                 original_value = getattr(self.simulation, param, None)
@@ -1143,6 +1185,14 @@ class SimulationWindow(QMainWindow):
                 if abs(original_buffer - current_buffer) > 1e-10:
                     debug_print(f"Buffer capacity changed: {original_buffer} -> {current_buffer}")
                     return True
+            if hasattr(self.simulation, 'buffer_capacity_beta_mM_per_pH') and 'buffer_capacity_beta_mM_per_pH' in current_data:
+                original_beta = self.simulation.buffer_capacity_beta_mM_per_pH
+                current_beta = current_data['buffer_capacity_beta_mM_per_pH']
+                debug_print(f"Checking buffer capacity (mM per pH): original={original_beta}, current={current_beta}")
+                if original_beta is not None and current_beta is not None:
+                    if abs(original_beta - current_beta) > 1e-6:
+                        debug_print(f"Buffer capacity (mM/pH) changed: {original_beta} -> {current_beta}")
+                        return True
             
             # Check if ion species have changed
             if hasattr(self.simulation, 'species') and self.simulation.species:

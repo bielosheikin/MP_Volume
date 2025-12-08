@@ -1332,8 +1332,10 @@ class ResultsTabSuite(QWidget):
                 simulation_params['Total Time'] = f"{simulation_data.get('total_time', 0.0):.1f} s"
                 simulation_params['Temperature'] = f"{simulation_data.get('temperature', 310.0):.1f} K"
                 
+                if 'buffer_capacity_beta_mM_per_pH' in simulation_data:
+                    simulation_params['Buffer Capacity (mM Htot/pH)'] = f"{simulation_data.get('buffer_capacity_beta_mM_per_pH', 0):.3f}"
                 if 'init_buffer_capacity' in simulation_data:
-                    simulation_params['Buffer Capacity'] = f"{simulation_data.get('init_buffer_capacity', 0)}"
+                    simulation_params['Buffer Capacity (1/beta)'] = f"{simulation_data.get('init_buffer_capacity', 0)}"
                 
                 # Add vesicle parameters
                 if 'vesicle' in simulation_data:

@@ -9,7 +9,7 @@ from .default_channels import default_channels
 from .default_ion_species import default_ion_species
 from .ion_and_channels_link import IonChannelsLink
 from .histories_storage import HistoriesStorage
-from math import log10
+from math import log10, isclose
 from ..nestconf.configurable import Configurable
 from typing import Optional, Dict, Any, List, Union, Tuple, Set
 import os
@@ -20,12 +20,20 @@ import time
 from pathlib import Path
 from ..app_settings import DEBUG_LOGGING, MAX_HISTORY_PLOT_POINTS, MAX_HISTORY_SAVE_POINTS
 
+BUFFER_CAPACITY_CONVERSION_FACTOR = 800.0  # Converts physical buffer capacity (mM/pH) to total/free ratio
+DEFAULT_BUFFER_CAPACITY_MMP_PER_PH = 2.5  # Matches legacy 1/beta = 5e-4
+
+
 class Simulation(Configurable, Trackable):
     # Configuration fields defined directly in the class
     time_step: float = 0.001
     total_time: float = 100.0
     temperature: float = 310.13274319979337 # Temperature that gives legacy RT = 2578.5871
-    init_buffer_capacity: float = 5e-4
+    adaptive_time_step: bool = False
+    max_time_step: float = 0.01
+    adaptive_change_tolerance: float = 0.02  # Relative change that triggers a smaller step
+    init_buffer_capacity: Optional[float] = None  # Legacy input: 1 / beta (dimensionless)
+    buffer_capacity_beta_mM_per_pH: Optional[float] = None  # Human-facing input: mM H_tot per 1 pH unit
     init_vesicle_pH: Optional[float] = None  # New field for initial vesicle pH
     channels: Optional[Dict[str, IonChannel]] = None
     species: Optional[Dict[str, IonSpecies]] = None
@@ -37,8 +45,15 @@ class Simulation(Configurable, Trackable):
     TRACKABLE_FIELDS = ('buffer_capacity', 'time', 'unaccounted_ion_conc')
 
     def __init__(self, simulations_path=None, stored_hash=None, display_name='simulation', **kwargs):
+        # Capture explicit buffer capacity inputs for precedence handling
+        provided_buffer_inverse = kwargs.get("init_buffer_capacity") if "init_buffer_capacity" in kwargs else None
+        provided_buffer_beta_mM = kwargs.get("buffer_capacity_beta_mM_per_pH") if "buffer_capacity_beta_mM_per_pH" in kwargs else None
+
         # Initialize both parent classes with their required parameters
         super().__init__(**kwargs)  # This will handle both Configurable and Trackable initialization
+
+        # Normalise buffer-capacity configuration (supports legacy and new inputs)
+        self._initialize_buffer_capacity_values(provided_buffer_inverse, provided_buffer_beta_mM)
         
         # Store the simulations path and index (not part of config)
         self.simulations_path = simulations_path
@@ -58,6 +73,16 @@ class Simulation(Configurable, Trackable):
             raise ValueError("time_step must be positive.")
         if self.total_time < 0:
             raise ValueError("total_time cannot be negative.")
+        if self.max_time_step <= 0:
+            raise ValueError("max_time_step must be positive.")
+        if self.adaptive_time_step and self.max_time_step < self.time_step:
+            # Keep adaptive stepping safe and intuitive
+            self.max_time_step = self.time_step
+
+        # Runtime stepping helpers (not part of config)
+        self._stable_steps_for_adaptive = 0
+        self.last_max_relative_change = 0.0
+        self._reset_time_step_state()
 
         # Use default vesicle parameters if none provided
         if self.vesicle_params is None:
@@ -136,6 +161,63 @@ class Simulation(Configurable, Trackable):
         # Ensure MAX_HISTORY_PLOT_POINTS is smaller or equal to MAX_HISTORY_SAVE_POINTS
         if MAX_HISTORY_PLOT_POINTS > MAX_HISTORY_SAVE_POINTS:
             raise ValueError("MAX_HISTORY_PLOT_POINTS must be smaller or equal to MAX_HISTORY_SAVE_POINTS.")
+
+    # Buffer capacity helpers -------------------------------------------------
+    def _convert_beta_mM_to_inverse(self, beta_mM: float) -> float:
+        if beta_mM is None:
+            raise ValueError("buffer_capacity_beta_mM_per_pH cannot be None.")
+        if beta_mM <= 0:
+            raise ValueError("buffer_capacity_beta_mM_per_pH must be positive.")
+        return 1.0 / (beta_mM * BUFFER_CAPACITY_CONVERSION_FACTOR)
+
+    def _convert_inverse_to_beta_mM(self, inverse: float) -> float:
+        if inverse is None:
+            raise ValueError("init_buffer_capacity cannot be None.")
+        if inverse <= 0:
+            raise ValueError("init_buffer_capacity must be positive.")
+        return 1.0 / (inverse * BUFFER_CAPACITY_CONVERSION_FACTOR)
+
+    def _initialize_buffer_capacity_values(self,
+                                           provided_buffer_inverse: Optional[float],
+                                           provided_buffer_beta_mM: Optional[float]):
+        """
+        Normalise buffer capacity configuration. Supports legacy input (1/beta) and
+        new user-facing input (beta in mM H_tot per pH). The backend continues to
+        use the inverse (1/beta) for efficiency.
+        """
+        buffer_inverse = self.init_buffer_capacity if self.init_buffer_capacity is not None else provided_buffer_inverse
+        buffer_beta_mM = self.buffer_capacity_beta_mM_per_pH if self.buffer_capacity_beta_mM_per_pH is not None else provided_buffer_beta_mM
+
+        # Apply precedence rules
+        if provided_buffer_inverse is not None:
+            buffer_inverse = provided_buffer_inverse
+        if provided_buffer_beta_mM is not None:
+            buffer_beta_mM = provided_buffer_beta_mM
+
+        if buffer_inverse is None and buffer_beta_mM is None:
+            # Use defaults
+            buffer_beta_mM = DEFAULT_BUFFER_CAPACITY_MMP_PER_PH
+            buffer_inverse = self._convert_beta_mM_to_inverse(buffer_beta_mM)
+        elif buffer_inverse is None:
+            buffer_inverse = self._convert_beta_mM_to_inverse(buffer_beta_mM)
+        elif buffer_beta_mM is None:
+            buffer_beta_mM = self._convert_inverse_to_beta_mM(buffer_inverse)
+        else:
+            expected_inverse = self._convert_beta_mM_to_inverse(buffer_beta_mM)
+            if not isclose(expected_inverse, buffer_inverse, rel_tol=1e-9, abs_tol=1e-12):
+                if provided_buffer_beta_mM is not None and provided_buffer_inverse is not None:
+                    raise ValueError("Inconsistent buffer capacity inputs: "
+                                     f"init_buffer_capacity={buffer_inverse} vs "
+                                     f"buffer_capacity_beta_mM_per_pH={buffer_beta_mM}.")
+                # Align beta with the inverse value
+                buffer_beta_mM = self._convert_inverse_to_beta_mM(buffer_inverse)
+
+        # Persist the normalised values (these setters also update self.config)
+        self.init_buffer_capacity = buffer_inverse
+        self.buffer_capacity_beta_mM_per_pH = buffer_beta_mM
+        self.init_buffer_capacity_beta_ratio = buffer_beta_mM * BUFFER_CAPACITY_CONVERSION_FACTOR
+
+    # -------------------------------------------------------------------------
 
     def update_simulation_index(self):
         """Update the simulation index based on existing simulations, ensuring unique indices."""
@@ -283,8 +365,8 @@ class Simulation(Configurable, Trackable):
         hydrogen_species = next((s for s in self.all_species if s.display_name == 'h'), None)
         if hydrogen_species:
             
-            flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * 1 / self.buffer_capacity
-            flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * 1 / self.init_buffer_capacity
+            flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * self.buffer_capacity
+            flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * self.init_buffer_capacity
 
         else:
             # Check if any channel requires free hydrogen
@@ -338,7 +420,7 @@ class Simulation(Configurable, Trackable):
         self.vesicle.voltage = self.vesicle.charge / self.vesicle.capacitance
 
     def update_buffer(self):
-        self.buffer_capacity = self.init_buffer_capacity * (self.vesicle.init_volume / self.vesicle.volume)
+        self.buffer_capacity = self.init_buffer_capacity * (self.vesicle.volume / self.vesicle.init_volume)
 
     def update_pH(self):
         """Update the pH based on the free hydrogen concentration in the vesicle."""
@@ -347,7 +429,7 @@ class Simulation(Configurable, Trackable):
     
         if hydrogen_species:
             # Calculate free hydrogen in the vesicle using buffer capacity
-            free_hydrogen_conc = hydrogen_species.vesicle_conc * 1 / self.buffer_capacity
+            free_hydrogen_conc = hydrogen_species.vesicle_conc * self.buffer_capacity
             
             # Ensure free_hydrogen_conc is positive
             if free_hydrogen_conc <= 0:
@@ -363,13 +445,84 @@ class Simulation(Configurable, Trackable):
         for ion in self.all_species:
             ion.vesicle_amount = ion.vesicle_conc * 1000 * self.vesicle.volume
 
-    def update_ion_amounts(self, fluxes):
+    def update_ion_amounts(self, fluxes, time_step: Optional[float] = None):
+        """Update ion amounts using the provided time step (defaults to current_time_step)."""
+        dt = time_step if time_step is not None else self.current_time_step
         for ion, flux in zip(self.all_species, fluxes):
-            ion.vesicle_amount += flux * self.time_step
+            ion.vesicle_amount += flux * dt
             
             if ion.vesicle_amount < 0:
                 ion.vesicle_amount = 0
                 print(f"Warning: {ion.display_name} ion amount fell below zero and has been reset to zero.")
+
+    def _reset_time_step_state(self):
+        """Reset adaptive stepping runtime state before a run."""
+        self.minimum_time_step = max(self.time_step, 1e-9)
+        if self.adaptive_time_step and self.max_time_step < self.minimum_time_step:
+            self.max_time_step = self.minimum_time_step
+        self.current_time_step = self.minimum_time_step
+        self._stable_steps_for_adaptive = 0
+        self.last_max_relative_change = 0.0
+
+    def _capture_adaptive_state(self):
+        """Capture the current state for adaptive step size calculations."""
+        return {
+            "ion_conc": [ion.vesicle_conc for ion in self.all_species],
+            "voltage": self.vesicle.voltage,
+            "pH": self.vesicle.pH,
+            "volume": self.vesicle.volume,
+        }
+
+    def _calculate_max_relative_change(self, previous_state):
+        """Calculate the maximum relative change across tracked quantities."""
+        epsilon = 1e-12
+        deltas = []
+
+        for prev_conc, ion in zip(previous_state.get("ion_conc", []), self.all_species):
+            deltas.append(abs(ion.vesicle_conc - prev_conc) / max(abs(prev_conc), epsilon))
+
+        if "voltage" in previous_state:
+            deltas.append(abs(self.vesicle.voltage - previous_state["voltage"]) / max(abs(previous_state["voltage"]), epsilon))
+
+        if "pH" in previous_state:
+            deltas.append(abs(self.vesicle.pH - previous_state["pH"]) / max(abs(previous_state["pH"]), epsilon))
+
+        if "volume" in previous_state:
+            deltas.append(abs(self.vesicle.volume - previous_state["volume"]) / max(abs(previous_state["volume"]), epsilon))
+
+        return max(deltas) if deltas else 0.0
+
+    def _adjust_time_step(self, max_relative_change: float):
+        """Adapt the current_time_step based on observed state changes."""
+        # Always track last value for potential debugging/inspection
+        self.last_max_relative_change = max_relative_change
+
+        # If adaptive stepping is off, keep current_time_step aligned with configured time_step
+        if not self.adaptive_time_step:
+            self.current_time_step = self.time_step
+            return
+
+        min_step = self.minimum_time_step
+        max_step = max(self.max_time_step, min_step)
+
+        # Reduce step if changes are too large
+        if max_relative_change > self.adaptive_change_tolerance:
+            self._stable_steps_for_adaptive = 0
+            decreased_step = max(min_step, self.current_time_step * 0.5)
+            self.current_time_step = decreased_step
+            return
+
+        # Grow step when the system is calm for several consecutive iterations
+        calm_threshold = self.adaptive_change_tolerance * 0.25
+        if max_relative_change < calm_threshold:
+            self._stable_steps_for_adaptive += 1
+        else:
+            self._stable_steps_for_adaptive = 0
+
+        if self._stable_steps_for_adaptive >= 3:
+            increased_step = min(max_step, self.current_time_step * 1.5)
+            self.current_time_step = increased_step
+            self._stable_steps_for_adaptive = 0
 
     def update_vesicle_concentrations(self):
         for ion in self.all_species:
@@ -394,8 +547,11 @@ class Simulation(Configurable, Trackable):
         self.update_pH()
 
     
-    def run_one_iteration(self):
+    def run_one_iteration(self, time_step: Optional[float] = None):
+        step = time_step if time_step is not None else self.current_time_step
         self.current_iteration += 1
+
+        previous_state = self._capture_adaptive_state() if self.adaptive_time_step else None
 
         # LEGACY TIMING FIX: Calculate fluxes using CURRENT state (before updating)
         # This matches legacy: voltage at step t uses ion amounts from step t-1
@@ -403,7 +559,7 @@ class Simulation(Configurable, Trackable):
         fluxes = [ion.compute_total_flux(flux_calculation_parameters=flux_calculation_parameters) for ion in self.all_species]
 
         # Update ion amounts with fluxes
-        self.update_ion_amounts(fluxes)
+        self.update_ion_amounts(fluxes, time_step=step)
         
         # Update concentrations after amounts change
         self.update_vesicle_concentrations()
@@ -421,11 +577,15 @@ class Simulation(Configurable, Trackable):
         if (self.current_iteration % self.save_interval == 0) or (self.current_iteration == 1):
             self.histories.update_histories()
         
-        self.time += self.time_step
+        self.time += step
+
+        if previous_state is not None:
+            max_rel_change = self._calculate_max_relative_change(previous_state)
+            self._adjust_time_step(max_rel_change)
 
     def run(self, progress_callback=None):            
         """
-        Run the simulation for the configured number of iterations.
+        Run the simulation using a time-based loop that supports adaptive step sizes.
         
         Args:
             progress_callback (function, optional): A callback function that accepts a percentage value (0-100)
@@ -437,18 +597,26 @@ class Simulation(Configurable, Trackable):
         self.set_ion_amounts()
         self.get_unaccounted_ion_amount()
         
-        # Reset iteration counter at the start of run
+        # Reset counters and time-stepping state
         self.current_iteration = 0
+        self.time = 0.0
+        self._reset_time_step_state()
         
         # Record the true initial state at t=0 (initial conditions)
         self.histories.update_histories()
 
-        for iter_idx in range(self.iter_num):
-            self.run_one_iteration()
+        while self.time < self.total_time:
+            remaining_time = self.total_time - self.time
+            step = min(self.current_time_step, remaining_time)
+
+            if step <= 0:
+                raise RuntimeError("Time step reached a non-positive value during simulation run.")
+
+            self.run_one_iteration(step)
             
             # Report progress if a callback is provided
-            if progress_callback and self.iter_num > 0:
-                progress_percent = 100.0 * (iter_idx + 1) / self.iter_num
+            if progress_callback and self.total_time > 0:
+                progress_percent = 100.0 * min(self.time / self.total_time, 1.0)
                 progress_callback(progress_percent)
         
         # Make sure final state is recorded
@@ -614,7 +782,8 @@ class Simulation(Configurable, Trackable):
         # Add specific known parameters that should be included
         essential_params = [
             "time_step", "total_time", "temperature", 
-            "init_buffer_capacity"
+            "init_buffer_capacity", "buffer_capacity_beta_mM_per_pH",
+            "adaptive_time_step", "max_time_step", "adaptive_change_tolerance"
         ]
         for param in essential_params:
             if hasattr(self, param):
@@ -656,6 +825,10 @@ class Simulation(Configurable, Trackable):
                 "simulation_time": self.time,
                 "total_time": self.total_time,
                 "time_step": self.time_step,
+                "final_time_step": getattr(self, "current_time_step", self.time_step),
+                "max_time_step": self.max_time_step,
+                "adaptive_time_step": self.adaptive_time_step,
+                "adaptive_change_tolerance": self.adaptive_change_tolerance,
                 "simulation_index": self.simulation_index,
                 "has_run": self.has_run
             }
@@ -706,6 +879,10 @@ class Simulation(Configurable, Trackable):
         config["total_time"] = self.total_time
         config["temperature"] = self.temperature
         config["init_buffer_capacity"] = self.init_buffer_capacity
+        config["buffer_capacity_beta_mM_per_pH"] = self.buffer_capacity_beta_mM_per_pH
+        config["adaptive_time_step"] = self.adaptive_time_step
+        config["max_time_step"] = self.max_time_step
+        config["adaptive_change_tolerance"] = self.adaptive_change_tolerance
         
         # Copy vesicle parameters
         config["vesicle_params"] = self.vesicle_params.copy()

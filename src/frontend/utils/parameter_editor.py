@@ -720,7 +720,8 @@ class ParameterEditorDialog(QDialog):
         voltage_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">V = </td><td style="padding:2px; text-align:left;">Q / C</td></tr></table>'
         
         # Buffer capacity equation - directly from simulation.py
-        buffer_capacity_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">β = </td><td style="padding:2px; text-align:left;">β<sub>init</sub> × V<sub>init</sub> / Volume</td></tr></table>'
+        buffer_capacity_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">β(t) = </td><td style="padding:2px; text-align:left;">β<sub>init</sub> × V<sub>init</sub> / V(t)</td></tr></table>'
+        buffer_inverse_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">(1/β)(t) = </td><td style="padding:2px; text-align:left;">(1/β)<sub>init</sub> × V(t) / V<sub>init</sub></td></tr></table>'
 
         # pH equation - directly from simulation.py
         ph_eq = '<table style="border-collapse:collapse; margin:0; border:none; display:inline-table;"><tr><td style="padding:2px; text-align:left;">pH = </td><td style="padding:2px; text-align:left;">-log<sub>10</sub>([H<sup>+</sup>]<sub>free</sub>)</td></tr></table>'
@@ -736,6 +737,7 @@ class ParameterEditorDialog(QDialog):
         self.other_equation_display.add_equation("Capacitance", capacitance_eq)
         self.other_equation_display.add_equation("Voltage", voltage_eq)
         self.other_equation_display.add_equation("Buffer Capacity", buffer_capacity_eq)
+        self.other_equation_display.add_equation("Inverse Buffer Capacity", buffer_inverse_eq)
         self.other_equation_display.add_equation("Free Hydrogen", free_h_eq)
         self.other_equation_display.add_equation("pH", ph_eq)
         

@@ -8,6 +8,9 @@ dist/
 build/
 *.egg-info/
 
+# Built binaries
+MP_Volume_Simulator_*.exe
+
 # Virtual environment
 venv/
 env/

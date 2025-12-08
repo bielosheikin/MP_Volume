@@ -37,10 +37,12 @@ class SimulationWorker(QObject):
             self.simulation.histories.flush_histories()
             
             # Initialize simulation
-            total_iterations = self.simulation.iter_num
+            total_time = self.simulation.total_time
             
-            # Reset current_iteration counter for consistent behavior
+            # Reset counters and stepping state for consistent behavior
             self.simulation.current_iteration = 0
+            self.simulation.time = 0.0
+            self.simulation._reset_time_step_state()
             
             self.simulation.set_ion_amounts()
             self.simulation.get_unaccounted_ion_amount()
@@ -49,27 +51,28 @@ class SimulationWorker(QObject):
             self.simulation.histories.update_histories()
             
             last_progress_update = time.time()
+            
+            # Run time-based loop to support adaptive stepping
+            while self._is_running and self.simulation.time < total_time:
+                remaining_time = total_time - self.simulation.time
+                step = min(self.simulation.current_time_step, remaining_time)
 
-            # Run all iterations
-            for i in range(total_iterations):
-                # Check if we should stop
-                if not self._is_running:
-                    # We were asked to stop, so exit early
-                    break
-                    
+                if step <= 0:
+                    raise RuntimeError("Time step reached a non-positive value during simulation.")
+                
                 # Run one iteration of the simulation
-                self.simulation.run_one_iteration()
-
+                self.simulation.run_one_iteration(step)
+                
                 # Update progress and emit signals (limited to avoid UI flooding)
-                # Update at most 10 times per second
                 current_time = time.time()
-                if (i + 1) % 1000 == 0 or i + 1 == total_iterations or current_time - last_progress_update >= 0.1:
-                    self._progress = int(((i + 1) / total_iterations) * 100)
+                if current_time - last_progress_update >= 0.1 or self.simulation.time >= total_time:
+                    progress_fraction = min(self.simulation.time / total_time, 1.0) if total_time > 0 else 1.0
+                    self._progress = int(progress_fraction * 100)
                     self.progressChanged.emit(self._progress)
                     last_progress_update = current_time
             
             # If we completed all iterations (weren't stopped early)
-            if self._is_running and self._progress >= 99:
+            if self._is_running and self.simulation.time >= total_time:
                 # Set progress to 100% to ensure UI shows completion
                 self.progressChanged.emit(100)
                 

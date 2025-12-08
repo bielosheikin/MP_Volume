@@ -5,6 +5,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 import math
 from ..backend.default_ion_species import default_ion_species
+from ..backend.simulation import (
+    BUFFER_CAPACITY_CONVERSION_FACTOR,
+    DEFAULT_BUFFER_CAPACITY_MMP_PER_PH,
+)
 
 class VesicleTab(QWidget):
     # Signal to notify when hydrogen concentration changes
@@ -29,12 +33,12 @@ class VesicleTab(QWidget):
         layout.addRow("Initial Voltage (V):", self.init_voltage)
 
         self.buffer_capacity = QDoubleSpinBox()
-        self.buffer_capacity.setDecimals(7)
-        self.buffer_capacity.setRange(0.00001, 0.1)
-        self.buffer_capacity.setValue(0.0005)
-        self.buffer_capacity.setSingleStep(0.0001)
+        self.buffer_capacity.setDecimals(4)
+        self.buffer_capacity.setRange(0.001, 50.0)
+        self.buffer_capacity.setValue(DEFAULT_BUFFER_CAPACITY_MMP_PER_PH)
+        self.buffer_capacity.setSingleStep(0.1)
         self.buffer_capacity.valueChanged.connect(self.update_calculated_hydrogen_concentration)
-        layout.addRow("Initial Buffer Capacity:", self.buffer_capacity)
+        layout.addRow("Buffer Capacity (mM Htot / pH):", self.buffer_capacity)
 
         # New field for initial vesicle pH (editable)
         self.init_vesicle_pH = QDoubleSpinBox()
@@ -73,7 +77,7 @@ class VesicleTab(QWidget):
         """Calculate hydrogen concentration from pH and buffer capacity"""
         try:
             vesicle_pH = self.init_vesicle_pH.value()
-            buffer_capacity = self.buffer_capacity.value()
+            buffer_capacity_mM = self.buffer_capacity.value()
             exterior_pH = self.default_pH.value()
             
             # Calculate vesicle hydrogen concentration
@@ -81,9 +85,8 @@ class VesicleTab(QWidget):
             free_h_conc = 10 ** (-vesicle_pH)
             
             # Calculate total hydrogen concentration from free concentration and buffer capacity
-            # free_h_conc = total_h_conc * buffer_capacity
-            # Therefore: total_h_conc = free_h_conc / buffer_capacity
-            total_h_conc = free_h_conc / buffer_capacity
+            beta_ratio = buffer_capacity_mM * BUFFER_CAPACITY_CONVERSION_FACTOR
+            total_h_conc = free_h_conc * beta_ratio
             
             # Display the calculated vesicle concentration
             self.calculated_h_concentration.setText(f"{total_h_conc:.6e}")
@@ -93,7 +96,7 @@ class VesicleTab(QWidget):
             # For exterior, we assume no buffer capacity (or same buffer capacity)
             # For simplicity, we'll use the same buffer capacity as vesicle
             exterior_free_h_conc = 10 ** (-exterior_pH)
-            exterior_total_h_conc = exterior_free_h_conc / buffer_capacity
+            exterior_total_h_conc = exterior_free_h_conc * beta_ratio
             
             # Display the calculated exterior concentration
             self.calculated_exterior_h_concentration.setText(f"{exterior_total_h_conc:.6e}")
@@ -113,10 +116,10 @@ class VesicleTab(QWidget):
         """Get the calculated hydrogen concentration"""
         try:
             vesicle_pH = self.init_vesicle_pH.value()
-            buffer_capacity = self.buffer_capacity.value()
+            buffer_capacity_mM = self.buffer_capacity.value()
             
             free_h_conc = 10 ** (-vesicle_pH)
-            total_h_conc = free_h_conc / buffer_capacity
+            total_h_conc = free_h_conc * buffer_capacity_mM * BUFFER_CAPACITY_CONVERSION_FACTOR
             
             return total_h_conc
         except:
@@ -125,7 +128,7 @@ class VesicleTab(QWidget):
     def get_data(self):
         init_radius = self.init_radius.value()
         init_voltage = self.init_voltage.value()
-        buffer_capacity = self.buffer_capacity.value()
+        buffer_capacity_mM = self.buffer_capacity.value()
         default_pH = self.default_pH.value()
         vesicle_pH = self.init_vesicle_pH.value()
         
@@ -133,7 +136,7 @@ class VesicleTab(QWidget):
             QMessageBox.warning(self, "Invalid Parameter", "Initial radius must be positive.")
             return None
             
-        if buffer_capacity <= 0:
+        if buffer_capacity_mM <= 0:
             QMessageBox.warning(self, "Invalid Parameter", "Initial buffer capacity must be positive.")
             return None
             
@@ -153,7 +156,8 @@ class VesicleTab(QWidget):
             "exterior_params": {
                 "pH": default_pH,
             },
-            "init_buffer_capacity": buffer_capacity,
+            "buffer_capacity_beta_mM_per_pH": buffer_capacity_mM,
+            "init_buffer_capacity": 1.0 / (buffer_capacity_mM * BUFFER_CAPACITY_CONVERSION_FACTOR),
             "init_vesicle_pH": vesicle_pH
         }
 
@@ -167,8 +171,12 @@ class VesicleTab(QWidget):
         if "init_voltage" in vesicle_params:
             self.init_voltage.setValue(vesicle_params["init_voltage"])
         
-        if "init_buffer_capacity" in data:
-            self.buffer_capacity.setValue(data["init_buffer_capacity"])
+        if "buffer_capacity_beta_mM_per_pH" in data:
+            self.buffer_capacity.setValue(data["buffer_capacity_beta_mM_per_pH"])
+        elif "init_buffer_capacity" in data and data["init_buffer_capacity"]:
+            # Legacy value provided, convert to mM/pH for display
+            inverse = data["init_buffer_capacity"]
+            self.buffer_capacity.setValue(1.0 / (inverse * BUFFER_CAPACITY_CONVERSION_FACTOR))
         
         if "init_vesicle_pH" in data:
             self.init_vesicle_pH.setValue(data["init_vesicle_pH"])
