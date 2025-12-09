@@ -150,23 +150,23 @@ class ParameterEditorDialog(QDialog):
         
         # Maps for user-friendly parameter names and dropdown values
         friendly_param_names = {
-            'conductance': 'Conductance',
+            'conductance': 'Conductance (S)',
             'channel_type': 'Channel Type',
             'dependence_type': 'Dependency',
             'voltage_multiplier': 'Voltage Multiplier',
             'nernst_multiplier': 'Nernst Multiplier',
-            'voltage_shift': 'Voltage Shift',
+            'voltage_shift': 'Voltage Shift (V)',
             'flux_multiplier': 'Flux Multiplier',
             'primary_exponent': 'Primary Exponent',
             'secondary_exponent': 'Secondary Exponent',
-            'custom_nernst_constant': 'Custom Nernst Constant',
+            'custom_nernst_constant': 'Custom Nernst Constant (V)',
             'use_free_hydrogen': 'Use Free Hydrogen',
             'voltage_exponent': 'Voltage Exponent',
-            'half_act_voltage': 'Half Activation Voltage',
+            'half_act_voltage': 'Half Activation Voltage (V)',
             'pH_exponent': 'pH Exponent',
             'half_act_pH': 'Half Activation pH',
-            'time_exponent': 'Time Exponent',
-            'half_act_time': 'Half Activation Time'
+            'time_exponent': 'Time Exponent (1/s)',
+            'half_act_time': 'Half Activation Time (s)'
         }
         
         # Check if hydrogen is involved or could potentially be involved

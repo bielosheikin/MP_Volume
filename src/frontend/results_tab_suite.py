@@ -433,15 +433,11 @@ class ResultsTabSuite(QWidget):
                 'has_run': has_run   # Store has_run flag for easier access
             }
             
-            # Create time data from metadata (this is small and useful to have ready)
+            # Note: We don't pre-create simulation_time here anymore
+            # It will be loaded from the .npy file on demand, just like other variables
             total_time = metadata.get('total_time', 0.0)
             time_step = metadata.get('time_step', 0.001)
             count = metadata.get('count', 0)
-            
-            if count > 0:
-                # Create time array
-                time_data = np.linspace(0, total_time, count)
-                self.simulation_data[sim_hash]['data']['time'] = time_data
             
             # Print loading message for all simulations
             run_status = "has been run" if has_run else "has NOT been run"
@@ -468,12 +464,9 @@ class ResultsTabSuite(QWidget):
         available_histories = sim_data.get('available_histories', [])
         
         # Map normalized names back to simulation-specific names
-        if var_name == 'time':
-            # Look for simulation-specific time variable (e.g., cl_1_time)
-            for hist_var in available_histories:
-                if hist_var.endswith('_time') and hist_var != 'simulation_time':
-                    actual_var_name = hist_var
-                    break
+        if var_name == 'simulation_time':
+            # Use simulation_time directly
+            actual_var_name = 'simulation_time'
         elif var_name == 'buffer_capacity':
             # Look for simulation-specific buffer_capacity variable (e.g., cl_1_buffer_capacity)
             for hist_var in available_histories:
@@ -490,13 +483,24 @@ class ResultsTabSuite(QWidget):
         # Check if we already have this data loaded (using actual variable name)
         if actual_var_name in sim_data['data']:
             return sim_data['data'][actual_var_name]
-            
+        
         # Check if this variable is available (using actual variable name)
         if actual_var_name not in available_histories:
+            # Special case: if simulation_time is not in available_histories, create it synthetically
+            if actual_var_name == 'simulation_time':
+                metadata = sim_data.get('metadata', {})
+                total_time = metadata.get('total_time', 0.0)
+                count = metadata.get('count', 0)
+                if count > 0:
+                    time_data = np.linspace(0, total_time, count)
+                    sim_data['data']['simulation_time'] = time_data
+                    return time_data
+                else:
+                    return None
             return None
         
         # Optimization: Only show loading message for large datasets
-        show_loading = var_name != 'time' and not var_name.endswith('_count')
+        show_loading = not var_name.endswith('_count')
         
         if show_loading and current_graph is not None:
             # Only update the specific graph that's currently being worked on
@@ -555,17 +559,12 @@ class ResultsTabSuite(QWidget):
                 # Use available_histories from metadata instead of checking loaded data
                 available_vars = set(sim_data.get('available_histories', []))
                 
-                # Always include 'time' if it exists (already loaded)
-                if 'time' in sim_data['data']:
-                    available_vars.add('time')
+                # Always add simulation_time since it's created synthetically
+                normalized_vars = {'simulation_time'}
                 
                 # Normalize simulation-specific variable names to general names
-                normalized_vars = set()
                 for var_name in available_vars:
-                    # Check for simulation-specific variables and normalize them
-                    if var_name.endswith('_time') and var_name != 'simulation_time':
-                        normalized_vars.add('time')
-                    elif var_name.endswith('_buffer_capacity'):
+                    if var_name.endswith('_buffer_capacity'):
                         normalized_vars.add('buffer_capacity')
                     elif var_name.endswith('_unaccounted_ion_conc'):
                         normalized_vars.add('unaccounted_ion_conc')
@@ -644,8 +643,8 @@ class ResultsTabSuite(QWidget):
                 
             # Clear data for non-selected simulations
             if 'data' in sim_data and sim_data['data']:
-                # Don't remove metadata like 'time' that's cheap to keep
-                vars_to_keep = ['time']
+                # Don't remove metadata like 'simulation_time' that's cheap to keep
+                vars_to_keep = ['simulation_time']
                 # Count variables we'll remove
                 for var_name in list(sim_data['data'].keys()):
                     if var_name not in vars_to_keep:
@@ -2285,7 +2284,7 @@ class ResultsTabSuite(QWidget):
                         continue
                     
                     # Load x_data (time) and y_data (variable values)
-                    x_data = self.get_simulation_variable(sim_hash, 'time', current_graph=None)
+                    x_data = self.get_simulation_variable(sim_hash, 'simulation_time', current_graph=None)
                     y_data = self.get_simulation_variable(sim_hash, var_name, current_graph=None)
                     
                     if x_data is not None and y_data is not None and len(x_data) > 0 and len(y_data) > 0:
@@ -2545,7 +2544,7 @@ class ResultsTabSuite(QWidget):
         
         # Check if we have required time data (try multiple possible names)
         time_var = None
-        possible_time_vars = ['simulation_time', 'time'] + [var for var in available_histories if var.endswith('_time')]
+        possible_time_vars = ['simulation_time'] + [var for var in available_histories if var.endswith('_time') and var != 'simulation_time']
         for var_name in possible_time_vars:
             if var_name in available_histories:
                 time_var = var_name
@@ -2858,7 +2857,7 @@ class ResultsTabSuite(QWidget):
                     color = sim_colors[i % len(sim_colors)]
                     
                     # Get time data
-                    time_data = self.get_simulation_variable(sim_hash, 'time')
+                    time_data = self.get_simulation_variable(sim_hash, 'simulation_time')
                     if time_data is None:
                         continue
                     

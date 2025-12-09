@@ -172,15 +172,6 @@ class IonChannel(Configurable, Trackable):
             self.half_act_voltage = -0.04
             print(f"Warning: Voltage dependence parameters were not set. Using defaults: exponent={self.voltage_exponent}, half_act={self.half_act_voltage}")
 
-        # Clamp the voltage to prevent math range errors
-        MAX_VOLTAGE = 709 / self.voltage_exponent + self.half_act_voltage
-        if voltage > MAX_VOLTAGE:
-            print(f"Warning: Voltage {voltage} exceeds the safe limit. Clamping to {MAX_VOLTAGE}.")
-            voltage = MAX_VOLTAGE
-        elif voltage < -MAX_VOLTAGE:
-            print(f"Warning: Voltage {voltage} is below the negative safe limit. Clamping to {-MAX_VOLTAGE}.")
-            voltage = -MAX_VOLTAGE
-
         self.voltage_dependence = 1.0 / (1.0 + exp(self.voltage_exponent * (voltage - self.half_act_voltage)))
         return self.voltage_dependence
 

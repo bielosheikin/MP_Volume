@@ -37,6 +37,13 @@ class SimulationParamsTab(QWidget):
         self.adaptive_change_tolerance.setToolTip("Relative change threshold that triggers time-step reduction (e.g. 0.02 = 2%).")
         layout.addRow("Adaptive change tolerance:", self.adaptive_change_tolerance)
         
+        self.temperature = QDoubleSpinBox()
+        self.temperature.setDecimals(2)
+        self.temperature.setRange(273.15, 373.15)  # 0°C to 100°C in Kelvin
+        self.temperature.setValue(310.13)  # Default value that matches legacy RT
+        self.temperature.setToolTip("Temperature in Kelvin (default 310.13 K ≈ 37°C, body temperature).")
+        layout.addRow("Temperature (K):", self.temperature)
+        
         self.setLayout(layout)
         
     def set_data(self, data):
@@ -66,6 +73,9 @@ class SimulationParamsTab(QWidget):
 
         if "adaptive_change_tolerance" in data:
             self.adaptive_change_tolerance.setValue(data["adaptive_change_tolerance"])
+        
+        if "temperature" in data:
+            self.temperature.setValue(data["temperature"])
 
     def get_data(self):
         # Validate parameters before returning
@@ -102,7 +112,8 @@ class SimulationParamsTab(QWidget):
             "total_time": total_time,
             "adaptive_time_step": adaptive_enabled,
             "max_time_step": max_time_step,
-            "adaptive_change_tolerance": adaptive_change_tolerance
+            "adaptive_change_tolerance": adaptive_change_tolerance,
+            "temperature": self.temperature.value()
         }
         
     def set_read_only(self, read_only=True):
@@ -123,3 +134,7 @@ class SimulationParamsTab(QWidget):
         self.adaptive_change_tolerance.setReadOnly(read_only)
         self.adaptive_change_tolerance.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
         self.adaptive_change_tolerance.setStyleSheet("background-color: #f0f0f0;" if read_only else "")
+        
+        self.temperature.setReadOnly(read_only)
+        self.temperature.setButtonSymbols(QDoubleSpinBox.NoButtons if read_only else QDoubleSpinBox.UpDownArrows)
+        self.temperature.setStyleSheet("background-color: #f0f0f0;" if read_only else "")

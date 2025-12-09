@@ -110,8 +110,6 @@ class GraphWidget(QWidget):
             # Default to time if available
             if 'simulation_time' in variables:
                 self.x_axis_combo.setCurrentText('simulation_time')
-            elif 'time' in variables:
-                self.x_axis_combo.setCurrentText('time')
         controls_layout.addWidget(self.x_axis_combo, 0, 1)
         
         # X-axis label
@@ -209,10 +207,8 @@ class GraphWidget(QWidget):
         if x_selected in variables:
             self.x_axis_combo.setCurrentText(x_selected)
         elif 'simulation_time' in variables and not has_selection:
-            # Default to time if we don't have a previous selection
+            # Default to simulation_time if we don't have a previous selection
             self.x_axis_combo.setCurrentText('simulation_time')
-        elif 'time' in variables and not has_selection:
-            self.x_axis_combo.setCurrentText('time')
             
         if y_selected in variables:
             self.y_axis_combo.setCurrentText(y_selected)

@@ -12,7 +12,7 @@ class IonSpeciesTab(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(5)  # Add column for delete buttons
-        self.table.setHorizontalHeaderLabels(["Ion Name", "Init Vesicle Conc", "Exterior Conc", "Charge", "Actions"])
+        self.table.setHorizontalHeaderLabels(["Ion Name", "Init Vesicle Conc (M)", "Exterior Conc (M)", "Charge (e)", "Actions"])
         
         # Connect cell changed signal
         self.table.itemChanged.connect(self.on_item_changed)
