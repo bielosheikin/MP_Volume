@@ -42,7 +42,7 @@ class Simulation(Configurable, Trackable):
     exterior_params: Optional[Dict[str, Any]] = None
     
     # Non-config fields
-    TRACKABLE_FIELDS = ('buffer_capacity', 'time', 'unaccounted_ion_conc')
+    TRACKABLE_FIELDS = ('inverse_buffer_capacity', 'time', 'unaccounted_ion_conc')
 
     def __init__(self, simulations_path=None, stored_hash=None, display_name='simulation', **kwargs):
         # Capture explicit buffer capacity inputs for precedence handling
@@ -136,7 +136,7 @@ class Simulation(Configurable, Trackable):
         self.exterior = None
         self.vesicle = None
         self.all_species = []  
-        self.buffer_capacity = self.init_buffer_capacity
+        self.inverse_buffer_capacity = self.init_buffer_capacity
         self.histories = HistoriesStorage()
         
         # Remove manual simulation_time management - 'time' is already a TRACKABLE_FIELD
@@ -365,7 +365,7 @@ class Simulation(Configurable, Trackable):
         hydrogen_species = next((s for s in self.all_species if s.display_name == 'h'), None)
         if hydrogen_species:
             
-            flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * self.buffer_capacity
+            flux_calculation_parameters.vesicle_hydrogen_free = hydrogen_species.vesicle_conc * self.inverse_buffer_capacity
             flux_calculation_parameters.exterior_hydrogen_free = hydrogen_species.exterior_conc * self.init_buffer_capacity
 
         else:
@@ -420,7 +420,7 @@ class Simulation(Configurable, Trackable):
         self.vesicle.voltage = self.vesicle.charge / self.vesicle.capacitance
 
     def update_buffer(self):
-        self.buffer_capacity = self.init_buffer_capacity * (self.vesicle.volume / self.vesicle.init_volume)
+        self.inverse_buffer_capacity = self.init_buffer_capacity * (self.vesicle.volume / self.vesicle.init_volume)
 
     def update_pH(self):
         """Update the pH based on the free hydrogen concentration in the vesicle."""
@@ -428,8 +428,8 @@ class Simulation(Configurable, Trackable):
         hydrogen_species = next((species for species in self.all_species if species.display_name == 'h'), None)
     
         if hydrogen_species:
-            # Calculate free hydrogen in the vesicle using buffer capacity
-            free_hydrogen_conc = hydrogen_species.vesicle_conc * self.buffer_capacity
+            # Calculate free hydrogen in the vesicle using inverse buffer capacity (1/beta)
+            free_hydrogen_conc = hydrogen_species.vesicle_conc * self.inverse_buffer_capacity
             
             # Ensure free_hydrogen_conc is positive
             if free_hydrogen_conc <= 0:

@@ -686,7 +686,7 @@ class SimulationWindow(QMainWindow):
                         simulation_data.get('init_buffer_capacity'),
                         simulation_data.get('buffer_capacity_beta_mM_per_pH')
                     )
-                    self.simulation.buffer_capacity = self.simulation.init_buffer_capacity
+                    self.simulation.inverse_buffer_capacity = self.simulation.init_buffer_capacity
                     
                     # Update vesicle parameters
                     if 'vesicle_params' in simulation_data:

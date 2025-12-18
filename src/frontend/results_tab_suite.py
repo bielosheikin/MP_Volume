@@ -467,10 +467,10 @@ class ResultsTabSuite(QWidget):
         if var_name == 'simulation_time':
             # Use simulation_time directly
             actual_var_name = 'simulation_time'
-        elif var_name == 'buffer_capacity':
-            # Look for simulation-specific buffer_capacity variable (e.g., cl_1_buffer_capacity)
+        elif var_name == 'inverse_buffer_capacity':
+            # Look for simulation-specific inverse_buffer_capacity variable (e.g., cl_1_inverse_buffer_capacity)
             for hist_var in available_histories:
-                if hist_var.endswith('_buffer_capacity'):
+                if hist_var.endswith('_inverse_buffer_capacity'):
                     actual_var_name = hist_var
                     break
         elif var_name == 'unaccounted_ion_conc':
@@ -564,8 +564,8 @@ class ResultsTabSuite(QWidget):
                 
                 # Normalize simulation-specific variable names to general names
                 for var_name in available_vars:
-                    if var_name.endswith('_buffer_capacity'):
-                        normalized_vars.add('buffer_capacity')
+                    if var_name.endswith('_inverse_buffer_capacity'):
+                        normalized_vars.add('inverse_buffer_capacity')
                     elif var_name.endswith('_unaccounted_ion_conc'):
                         normalized_vars.add('unaccounted_ion_conc')
                     else:

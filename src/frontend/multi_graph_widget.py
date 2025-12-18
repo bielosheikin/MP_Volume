@@ -9,6 +9,16 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import os
 
 
+def get_display_label(var_name):
+    """Convert variable names to more readable display labels"""
+    if var_name == 'inverse_buffer_capacity':
+        return 'Inverse Buffer Capacity (1/β)'
+    elif var_name == 'simulation_time':
+        return 'Time (s)'
+    # Add more mappings as needed
+    return var_name
+
+
 class GraphWidget(QWidget):
     """Individual graph widget with its own controls"""
     
@@ -160,9 +170,9 @@ class GraphWidget(QWidget):
         x_var = self.x_axis_combo.currentText()
         y_var = self.y_axis_combo.currentText()
         
-        # Use custom labels if provided, otherwise use variable names
-        x_label = self.x_label_edit.text() or x_var
-        y_label = self.y_label_edit.text() or y_var
+        # Use custom labels if provided, otherwise use display-friendly labels
+        x_label = self.x_label_edit.text() or get_display_label(x_var)
+        y_label = self.y_label_edit.text() or get_display_label(y_var)
         
         # Use custom title if provided, otherwise create a default one
         title = self.title_edit.text()
@@ -228,11 +238,11 @@ class GraphWidget(QWidget):
         x_var = self.x_axis_combo.currentText()
         y_var = self.y_axis_combo.currentText()
         
-        # Update placeholders
+        # Update placeholders with display-friendly labels
         if x_var:
-            self.x_label_edit.setPlaceholderText(x_var)
+            self.x_label_edit.setPlaceholderText(get_display_label(x_var))
         if y_var:
-            self.y_label_edit.setPlaceholderText(y_var)
+            self.y_label_edit.setPlaceholderText(get_display_label(y_var))
             
         # Update title placeholder if title is empty or default
         current_title = self.title_edit.text()

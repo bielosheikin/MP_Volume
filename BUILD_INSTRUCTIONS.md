@@ -1,120 +1,117 @@
-# MP_Volume - Building Standalone Executable
+# Building MP_Volume Standalone Executable
 
-This document explains how to create a standalone executable of the MP_Volume application.
+This guide explains how to create a standalone executable of the MP_Volume application.
 
 ## Prerequisites
 
-- Python 3.8 or higher
-- All dependencies installed (run `pip install -r requirements.txt`)
-- Windows OS (for .exe generation)
+1. **Python Environment**: Make sure you have Python 3.8 or later installed with all dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Quick Build (Recommended)
-
-### Option 1: Using the Build Script (Easiest)
-```bash
-# Simply run the batch file
-build.bat
-```
-This will automatically:
-- Install/upgrade PyInstaller
-- Build the executable
-- Show the results
-
-### Option 2: Using Python Script
-```bash
-python build_executable.py
-```
-
-### Option 3: Using PyInstaller Directly
-```bash
-pyinstaller MP_Volume.spec
-```
-
-## Build Options
-
-### Single File Executable (Default)
-Creates one large executable file (~100-200 MB) that contains everything:
-- **Pros**: Single file, easy to distribute
-- **Cons**: Larger file size, slower startup
-
-### Directory Distribution (Alternative)
-To create a directory with multiple files instead:
-1. Edit `MP_Volume.spec`
-2. Uncomment the `COLLECT` section at the bottom
-3. Comment out the single-file options in the `EXE` section
-
-## Output
-
-After successful build, you'll find:
-- **`dist/MP_Volume.exe`** - Your standalone executable
-- **`build/`** - Temporary build files (can be deleted)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"PyInstaller not found"**
+2. **PyInstaller**: Should already be installed from requirements.txt, but you can verify:
    ```bash
    pip install pyinstaller
    ```
 
-2. **"Module not found" errors**
-   - Check that all dependencies are installed
-   - Add missing modules to `hiddenimports` in `MP_Volume.spec`
+## Building on Windows
 
-3. **Large executable size**
-   - Normal for PyQt5 applications (100-200 MB)
-   - Can be reduced by excluding unused modules
+### Method 1: Using the build script (Recommended)
+Simply double-click `build_exe.bat` or run it from command prompt:
+```cmd
+build_exe.bat
+```
 
-4. **Slow startup**
-   - Normal for single-file executables
-   - Consider directory distribution for faster startup
+### Method 2: Manual build
+```cmd
+pyinstaller MP_Volume.spec --clean
+```
 
-### Advanced Configuration
+## Building on Linux/Mac
 
-Edit `MP_Volume.spec` to:
-- Add custom icon (`icon='your_icon.ico'`)
-- Include additional data files
-- Exclude unnecessary modules
-- Configure debug options
+### Make the script executable (first time only):
+```bash
+chmod +x build_exe.sh
+```
+
+### Run the build script:
+```bash
+./build_exe.sh
+```
+
+Or manually:
+```bash
+pyinstaller MP_Volume.spec --clean
+```
+
+## Output
+
+After a successful build, you'll find:
+- **Single Executable**: `dist/MP_Volume.exe` (Windows) or `dist/MP_Volume` (Linux/Mac)
+- **File Size**: ~66 MB (everything packed inside!)
+- **No dependencies**: All libraries embedded in the single file
 
 ## Distribution
 
-The generated `MP_Volume.exe` can be distributed as-is:
-- No Python installation required on target machines
-- No additional dependencies needed
-- Works on Windows 7/8/10/11
+To distribute your application:
+1. Simply share the `dist/MP_Volume.exe` file
+2. Users run it directly - no installation, no Python, no dependencies required!
+3. Optionally, you can ZIP it with a README for clarity
 
-## File Structure
+## Customization
 
-```
-MP_Volume/
-├── app.py                 # Main application entry point
-├── src/                   # Source code directory
-├── requirements.txt       # Python dependencies
-├── build_executable.py    # Build script
-├── MP_Volume.spec         # PyInstaller configuration
-├── build.bat             # Windows batch build script
-└── dist/                 # Output directory (created after build)
-    └── MP_Volume.exe     # Your standalone executable
+### Removing the Console Window
+Edit `MP_Volume.spec` and change:
+```python
+console=True,  # Change to False to hide console window
 ```
 
-## Build Time
+### Adding an Icon
+1. Create or obtain an `.ico` file (Windows) or `.icns` file (Mac)
+2. Edit `MP_Volume.spec` and change:
+```python
+icon=None,  # Change to icon='path/to/your/icon.ico'
+```
 
-- First build: 5-10 minutes (downloads and processes all dependencies)
-- Subsequent builds: 2-5 minutes (uses cached data)
+### Reducing File Size
+The generated executable folder can be quite large (150-300 MB). This is normal for Python applications with PyQt5 and matplotlib. To reduce size:
+- Use UPX compression (already enabled in spec file)
+- Remove unused modules from `excludes` in the spec file
+- Consider using a one-file executable (slower startup but single file)
+
+## Troubleshooting
+
+### Build fails with "module not found"
+Add the missing module to `hiddenimports` in `MP_Volume.spec`
+
+### Application runs but features don't work
+Make sure all data files (especially in `src/`) are included in the `datas` section of `MP_Volume.spec`
+
+### Antivirus flags the executable
+This is common with PyInstaller executables. You can:
+- Submit the executable to antivirus companies as a false positive
+- Sign the executable with a code signing certificate
+- Distribute the source code instead for users who prefer it
 
 ## Testing
 
-After building, test the executable:
-1. Navigate to `dist/` folder
-2. Double-click `MP_Volume.exe`
-3. Verify all features work correctly
-4. Test on a machine without Python installed
+After building, test the executable by:
+1. Copying the `dist/MP_Volume` folder to a different location
+2. Running the executable
+3. Testing all major features (create simulation, run simulation, view results)
 
-## Notes
+## Build Time
 
-- The executable includes all your latest changes and bug fixes
-- Size is normal for PyQt5 applications (~100-200 MB)
-- First startup may be slower than subsequent runs
-- All simulation features, export functions, and UI improvements are included
+First build: 5-10 minutes (depending on your system)
+Subsequent builds: 2-5 minutes
+
+## File Size
+
+The single-file executable size:
+- **Windows**: ~66 MB
+- **Linux**: ~60-70 MB
+- **Mac**: ~65-75 MB
+
+This single file includes Python interpreter, PyQt5, matplotlib, numpy, and all dependencies.
+
+**Note**: The single-file executable extracts to a temporary folder when run (automatic, transparent to user) and cleans up when closed.

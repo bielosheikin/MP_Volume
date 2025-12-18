@@ -1,10 +1,12 @@
 @echo off
-echo ========================================
-echo MP Volume Simulator - Build Script
-echo ========================================
+REM Build script for creating MP_Volume standalone executable
+
+echo =====================================
+echo Building MP_Volume Executable
+echo =====================================
 echo.
 
-:: Check if PyInstaller is installed
+REM Check if PyInstaller is installed
 python -c "import PyInstaller" 2>nul
 if errorlevel 1 (
     echo ERROR: PyInstaller is not installed!
@@ -13,54 +15,33 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Clean previous builds
 echo Cleaning previous builds...
-if exist "build" rmdir /s /q "build"
-if exist "dist" rmdir /s /q "dist"
-if exist "MP_Volume_Simulator.exe" del "MP_Volume_Simulator.exe"
+if exist "build" rmdir /s /q build
+if exist "dist" rmdir /s /q dist
 
 echo.
 echo Building executable...
 echo This may take several minutes...
 echo.
 
-:: Build the executable using the spec file
-pyinstaller mp_volume_simulator.spec
+pyinstaller MP_Volume.spec --clean
 
-:: Check if build was successful
-if exist "dist\MP_Volume_Simulator.exe" (
+if errorlevel 1 (
     echo.
-    echo ========================================
-    echo BUILD SUCCESSFUL!
-    echo ========================================
-    echo.
-    echo Executable created: dist\MP_Volume_Simulator.exe
-    echo File size: 
-    for %%A in ("dist\MP_Volume_Simulator.exe") do echo   %%~zA bytes
-    echo.
-    echo You can now copy MP_Volume_Simulator.exe to any Windows computer
-    echo and run it without needing Python or any dependencies installed.
-    echo.
-    
-    :: Optional: Copy the exe to the root directory for convenience
-    copy "dist\MP_Volume_Simulator.exe" "MP_Volume_Simulator.exe" >nul
-    echo Also copied to: MP_Volume_Simulator.exe (in current directory)
-    echo.
-    
-) else (
-    echo.
-    echo ========================================
-    echo BUILD FAILED!
-    echo ========================================
-    echo.
-    echo Please check the error messages above.
-    echo Common issues:
-    echo - Missing dependencies in requirements.txt
-    echo - Import errors in the code
-    echo - Antivirus software blocking the build
-    echo.
+    echo ERROR: Build failed!
+    pause
+    exit /b 1
 )
 
 echo.
-echo Press any key to exit...
-pause >nul 
+echo =====================================
+echo Build Complete!
+echo =====================================
+echo.
+echo The executable can be found in:
+echo   dist\MP_Volume.exe
+echo.
+echo This is a single-file executable - just distribute this one .exe file!
+echo No installation needed, no dependencies required!
+echo.
+pause
