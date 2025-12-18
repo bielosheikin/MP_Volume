@@ -460,24 +460,39 @@ class SimulationSuite:
         # Generate the simulation hash
         sim_hash = simulation.get_hash()
         
+        if DEBUG_LOGGING:
+            print(f"\n=== add_simulation: Attempting to add '{simulation.display_name}' ===")
+            print(f"  Hash: {sim_hash[:16]}...")
+            print(f"  Existing simulations in suite: {len(self.simulations)}")
+            for existing_sim in self.simulations:
+                print(f"    - {existing_sim.display_name}: {existing_sim.get_hash()[:16]}...")
+        
         # Check if this simulation already exists in the suite (parameter duplication)
         sim_path = os.path.join(self.suite_path, sim_hash)
         if os.path.exists(sim_path):
+            if DEBUG_LOGGING:
+                print(f"  REJECTED: Simulation directory already exists at {sim_path}")
             return False, f"A simulation with identical parameters already exists. Please modify parameters to create a unique simulation."
         
         # Also check if simulation with the same hash is already in our set (parameter duplication)
         if any(sim.get_hash() == sim_hash for sim in self.simulations):
+            if DEBUG_LOGGING:
+                print(f"  REJECTED: Another simulation with same hash found in memory")
             return False, f"A simulation with identical parameters already exists. Please modify parameters to create a unique simulation."
         
         # Check for name duplication (separate from parameter duplication)
         if not allow_name_reuse:
             # Check in-memory simulations for name conflicts
             if any(sim.display_name == simulation.display_name for sim in self.simulations):
+                if DEBUG_LOGGING:
+                    print(f"  REJECTED: Simulation name '{simulation.display_name}' already exists in memory")
                 return False, f"A simulation with the name '{simulation.display_name}' already exists. Please choose a different name."
             
             # Also check names in filesystem simulations that might not be in memory
             existing_names = self._get_existing_simulation_names()
             if simulation.display_name in existing_names:
+                if DEBUG_LOGGING:
+                    print(f"  REJECTED: Simulation name '{simulation.display_name}' already exists in filesystem")
                 return False, f"A simulation with the name '{simulation.display_name}' already exists. Please choose a different name."
         else:
             # Even when allow_name_reuse=True, we should only allow it if we're updating the same simulation
@@ -505,6 +520,10 @@ class SimulationSuite:
         # Add to the internal set
         self.simulations.add(simulation)
         
+        if DEBUG_LOGGING:
+            print(f"  ACCEPTED: Adding simulation '{simulation.display_name}' to suite")
+            print(f"  Total simulations in suite: {len(self.simulations)}")
+        
         # Force save the simulation to disk immediately, even if it hasn't been run
         # This ensures the simulation directory exists with proper config files
         self._force_save_simulation(simulation)
@@ -514,6 +533,9 @@ class SimulationSuite:
         
         # Save the suite configuration
         self._save_suite_config()
+        
+        if DEBUG_LOGGING:
+            print(f"  SUCCESS: Simulation '{simulation.display_name}' added and saved")
         
         return True
     
@@ -785,12 +807,14 @@ class SimulationSuite:
                 simulations_path=self.suite_path,
                 **config
             )
+            if DEBUG_LOGGING:
+                print(f"  New simulation created with hash: {new_simulation.get_hash()[:16]}...")
         
         # Set a proper simulation index
         self._update_simulation_index(new_simulation)
         
-        # Add the simulation to the suite (but don't save it yet)
-        self.simulations.add(new_simulation)
+        # DON'T add to suite here - let the caller handle it with proper validation
+        # The caller should use add_simulation() which includes duplicate checks
         
         return new_simulation
     

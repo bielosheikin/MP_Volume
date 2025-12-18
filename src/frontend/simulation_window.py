@@ -50,7 +50,18 @@ class SimulationWindow(QMainWindow):
         
         self.suite = suite
         self.simulation = simulation
-        self.is_new = simulation is None
+        
+        # Determine if this is a new simulation by checking if it's in the suite
+        # A simulation is "new" if:
+        # 1. simulation is None, OR
+        # 2. simulation object exists but is not in the suite (e.g., created by create_based_on)
+        if simulation is None:
+            self.is_new = True
+        else:
+            # Check if this simulation is actually in the suite
+            sim_hash = simulation.get_hash()
+            self.is_new = not any(sim.get_hash() == sim_hash for sim in suite.simulations)
+        
         self.just_saved = False  # Flag to track if simulation was just saved
         self.skip_close_confirmation = False  # Flag to track if we should skip close confirmation
         self.read_only = False  # Flag to track if the window is in read-only mode
@@ -1108,10 +1119,13 @@ class SimulationWindow(QMainWindow):
             
             if reply == QMessageBox.Save:
                 debug_print("User chose Save in closeEvent")
-                # Set flag to avoid recursion and directly save
-                self.just_saved = True
-                self.save_simulation()
-                event.accept()
+                # Try to save - only close if successful
+                if self.save_simulation():
+                    self.just_saved = True
+                    event.accept()
+                else:
+                    # Validation failed, don't close
+                    event.ignore()
             elif reply == QMessageBox.Discard:
                 debug_print("User chose Discard in closeEvent")
                 event.accept()

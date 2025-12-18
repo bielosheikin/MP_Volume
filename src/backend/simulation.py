@@ -873,6 +873,11 @@ class Simulation(Configurable, Trackable):
         Create a deep copy of the simulation's configuration for creating a new simulation
         based on this one.
         """
+        from ..app_settings import DEBUG_LOGGING
+        if DEBUG_LOGGING:
+            print(f"\n=== get_config_copy: Creating config copy for '{self.display_name}' ===")
+            print(f"  Original hash: {self.get_hash()[:16]}...")
+        
         config = {}
         
         # Copy basic simulation parameters
@@ -884,6 +889,7 @@ class Simulation(Configurable, Trackable):
         config["adaptive_time_step"] = self.adaptive_time_step
         config["max_time_step"] = self.max_time_step
         config["adaptive_change_tolerance"] = self.adaptive_change_tolerance
+        config["init_vesicle_pH"] = self.init_vesicle_pH  # Copy pH parameter
         
         # Copy vesicle parameters
         config["vesicle_params"] = self.vesicle_params.copy()
@@ -988,5 +994,10 @@ class Simulation(Configurable, Trackable):
             # If it's already a dictionary or another type, use a deep copy
             import copy
             config["ion_channel_links"] = copy.deepcopy(self.ion_channel_links)
+        
+        from ..app_settings import DEBUG_LOGGING
+        if DEBUG_LOGGING:
+            print(f"  Config copy completed with {len(config)} top-level keys")
+            print(f"  Keys: {list(config.keys())}")
         
         return config

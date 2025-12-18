@@ -527,18 +527,16 @@ class SuiteWindow(QMainWindow):
             # Get the configuration from the existing simulation
             config_copy = base_simulation.get_config_copy()
             
-            # Create a new simulation with this configuration
+            # Suggest a new name based on the original
+            suggested_name = f"{base_simulation.display_name} (copy)"
+            config_copy['display_name'] = suggested_name
+            
+            # Create a new simulation object (but DON'T add to suite yet - validation will happen on save)
             new_simulation = self.suite.create_simulation(config=config_copy)
             
-            # Suggest a new name based on the original
-            new_name = f"{base_simulation.display_name} (copy)"
-            new_simulation.display_name = new_name
-            
-            # Open the new simulation in edit mode
+            # Open the new simulation in edit mode (it will be treated as a new simulation)
+            # We pass the simulation object to pre-populate the window, but it's not in the suite yet
             self.open_simulation_window(new_simulation, editable=True)
-            
-            # Refresh the simulations list
-            self.refresh_simulations()
             
         except Exception as e:
             QMessageBox.critical(
