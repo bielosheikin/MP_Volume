@@ -139,16 +139,17 @@ class Simulation(Configurable, Trackable):
         self.inverse_buffer_capacity = self.init_buffer_capacity
         self.histories = HistoriesStorage()
         
-        # Remove manual simulation_time management - 'time' is already a TRACKABLE_FIELD
-        # self.histories.histories['simulation_time'] = []
-        # self.histories.histories['simulation_time'].append(self.time)
-        
         # Calculate nernst constant from temperature for consistency
         self.nernst_constant = self.temperature * IDEAL_GAS_CONSTANT / FARADAY_CONSTANT
         self.unaccounted_ion_amounts = None
 
-        # Register the simulation object itself first
+        # Register the simulation object itself first (uses display_name)
+        # This creates {display_name}_time, {display_name}_inverse_buffer_capacity, etc.
         self.histories.register_object(self)
+        
+        # Create a standardized simulation_time history for cross-simulation plotting
+        # This is an alias/copy of {display_name}_time, maintained for consistency
+        self.histories.histories['simulation_time'] = []
 
         # Initialize simulation components
         self._initialize_vesicle_and_exterior()

@@ -465,8 +465,12 @@ class ResultsTabSuite(QWidget):
         
         # Map normalized names back to simulation-specific names
         if var_name == 'simulation_time':
-            # Use simulation_time directly
+            # Look for simulation-specific time variable (e.g., KCl_time, simulation_time)
             actual_var_name = 'simulation_time'
+            for hist_var in available_histories:
+                if hist_var.endswith('_time') and not hist_var.endswith('_act_time'):
+                    actual_var_name = hist_var
+                    break
         elif var_name == 'inverse_buffer_capacity':
             # Look for simulation-specific inverse_buffer_capacity variable (e.g., cl_1_inverse_buffer_capacity)
             for hist_var in available_histories:
@@ -568,6 +572,10 @@ class ResultsTabSuite(QWidget):
                         normalized_vars.add('inverse_buffer_capacity')
                     elif var_name.endswith('_unaccounted_ion_conc'):
                         normalized_vars.add('unaccounted_ion_conc')
+                    elif var_name.endswith('_time') and var_name != 'simulation_time' and not var_name.endswith('_act_time'):
+                        # Skip display_name_time variables (e.g., KCl_time, HighCl_time)
+                        # We only show the standardized 'simulation_time'
+                        continue
                     else:
                         # Keep the original variable name for non-simulation-specific variables
                         normalized_vars.add(var_name)
@@ -2888,7 +2896,13 @@ class ResultsTabSuite(QWidget):
         sim_data = self.simulation_data[sim_hash]
         available_histories = sim_data.get('available_histories', [])
         
-        if 'simulation_time' not in available_histories:
+        # Check if we have any time data (simulation_time or display_name_time)
+        time_var = None
+        for var in ['simulation_time'] + [v for v in available_histories if v.endswith('_time') and not v.endswith('_act_time')]:
+            if var in available_histories:
+                time_var = var
+                break
+        if not time_var:
             return
         
         # Create a 3x3 grid for additional fluxes (consistent with main template)
@@ -2949,12 +2963,19 @@ class ResultsTabSuite(QWidget):
                 current_sim_data = self.simulation_data[current_sim_hash]
                 current_available_histories = current_sim_data.get('available_histories', [])
                 
+                # Find time variable for this simulation
+                current_time_var = None
+                for var in ['simulation_time'] + [v for v in current_available_histories if v.endswith('_time') and not v.endswith('_act_time')]:
+                    if var in current_available_histories:
+                        current_time_var = var
+                        break
+                
                 # Skip if this simulation doesn't have the required data
-                if 'simulation_time' not in current_available_histories or flux_config['var'] not in current_available_histories:
+                if not current_time_var or flux_config['var'] not in current_available_histories:
                     continue
                 
                 # Get time and flux data
-                time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                time_data = self.get_simulation_variable(current_sim_hash, current_time_var)
                 flux_data = self.get_simulation_variable(current_sim_hash, flux_config['var'])
                 
                 if time_data is not None and flux_data is not None and len(time_data) > 0 and len(flux_data) > 0:
@@ -2987,8 +3008,13 @@ class ResultsTabSuite(QWidget):
         sim_data = self.simulation_data[sim_hash]
         available_histories = sim_data.get('available_histories', [])
         
-        # Check if we have required data
-        if 'simulation_time' not in available_histories:
+        # Check if we have required time data (simulation_time or display_name_time)
+        time_var = None
+        for var in ['simulation_time'] + [v for v in available_histories if v.endswith('_time') and not v.endswith('_act_time')]:
+            if var in available_histories:
+                time_var = var
+                break
+        if not time_var:
             return
             
         # Check which data is available
@@ -3065,12 +3091,19 @@ class ResultsTabSuite(QWidget):
                 current_sim_data = self.simulation_data[current_sim_hash]
                 current_available_histories = current_sim_data.get('available_histories', [])
                 
+                # Find time variable for this simulation
+                current_time_var = None
+                for var in ['simulation_time'] + [v for v in current_available_histories if v.endswith('_time') and not v.endswith('_act_time')]:
+                    if var in current_available_histories:
+                        current_time_var = var
+                        break
+                
                 # Skip if this simulation doesn't have the required data
-                if 'simulation_time' not in current_available_histories or plot_config['var'] not in current_available_histories:
+                if not current_time_var or plot_config['var'] not in current_available_histories:
                     continue
                 
                 # Get time and variable data
-                time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                time_data = self.get_simulation_variable(current_sim_hash, current_time_var)
                 var_data = self.get_simulation_variable(current_sim_hash, plot_config['var'])
                 
                 if time_data is not None and var_data is not None and len(time_data) > 0 and len(var_data) > 0:
@@ -3097,8 +3130,13 @@ class ResultsTabSuite(QWidget):
         sim_data = self.simulation_data[sim_hash]
         available_histories = sim_data.get('available_histories', [])
         
-        # Check if we have time data
-        if 'simulation_time' not in available_histories:
+        # Check if we have time data (simulation_time or display_name_time)
+        time_var = None
+        for var in ['simulation_time'] + [v for v in available_histories if v.endswith('_time') and not v.endswith('_act_time')]:
+            if var in available_histories:
+                time_var = var
+                break
+        if not time_var:
             return
             
         # Find all flux histories
@@ -3162,12 +3200,19 @@ class ResultsTabSuite(QWidget):
                 current_sim_data = self.simulation_data[current_sim_hash]
                 current_available_histories = current_sim_data.get('available_histories', [])
                 
+                # Find time variable for this simulation
+                current_time_var = None
+                for var in ['simulation_time'] + [v for v in current_available_histories if v.endswith('_time') and not v.endswith('_act_time')]:
+                    if var in current_available_histories:
+                        current_time_var = var
+                        break
+                
                 # Skip if this simulation doesn't have the required data
-                if 'simulation_time' not in current_available_histories or flux_var not in current_available_histories:
+                if not current_time_var or flux_var not in current_available_histories:
                     continue
                 
                 # Get time and flux data
-                time_data = self.get_simulation_variable(current_sim_hash, 'simulation_time')
+                time_data = self.get_simulation_variable(current_sim_hash, current_time_var)
                 flux_data = self.get_simulation_variable(current_sim_hash, flux_var)
                 
                 if time_data is not None and flux_data is not None and len(time_data) > 0 and len(flux_data) > 0:

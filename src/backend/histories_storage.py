@@ -35,6 +35,11 @@ class HistoriesStorage:
             for field_name, field_value in current_state.items():
                 self.histories[f'{obj_name}_{field_name}'].append(field_value)
                 
+                # Special case: also update simulation_time as an alias for any {name}_time
+                # This provides a standardized time variable for cross-simulation plotting
+                if field_name == 'time' and 'simulation_time' in self.histories:
+                    self.histories['simulation_time'].append(field_value)
+                
     def flush_histories(self):
         for tracked_field_name in self.histories.keys():
             self.histories[tracked_field_name] = []
