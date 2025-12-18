@@ -292,7 +292,26 @@ class SimulationWindow(QMainWindow):
             # Populate the channels tab
             channels_data = {}
             for name, channel in self.simulation.channels.items():
-                channel_data = {key: val for key, val in channel.config.__dict__.items()}
+                # Extract channel data using the same comprehensive approach as get_config_copy
+                channel_data = {}
+                
+                # Get all config attributes
+                if hasattr(channel, "config") and hasattr(channel.config, "__dict__"):
+                    channel_data.update(channel.config.__dict__.copy())
+                
+                # Also get critical attributes that might not be in __dict__
+                for attr in [
+                    "conductance", "allowed_primary_ion", "allowed_secondary_ion",
+                    "channel_type", "dependence_type", "voltage_multiplier", 
+                    "nernst_multiplier", "voltage_shift", "flux_multiplier",
+                    "primary_exponent", "secondary_exponent", "custom_nernst_constant",
+                    "use_free_hydrogen", "voltage_exponent", "half_act_voltage",
+                    "pH_exponent", "half_act_pH", "time_exponent", "half_act_time",
+                    "is_coupled_channel", "master_channel_name", "coupled_channels"
+                ]:
+                    if hasattr(channel, attr) and attr not in channel_data:
+                        channel_data[attr] = getattr(channel, attr)
+                
                 channels_data[name] = channel_data
             
             # Create ion channel links data in the format expected by ChannelsTab.set_data

@@ -696,53 +696,95 @@ class SimulationSuite:
             if isinstance(config, dict) and 'display_name' not in config:
                 config['display_name'] = display_name
             
-            # Handle special case for channels
-            channels_dict = None
+            if DEBUG_LOGGING:
+                print(f"\n=== create_simulation: Creating '{display_name}' with config ===")
+                if 'channels' in config:
+                    print(f"  Config has 'channels' key: {len(config['channels'])} channels")
+                    if config['channels']:
+                        first_key = next(iter(config['channels'].keys()))
+                        first_value = config['channels'][first_key]
+                        print(f"  First channel: '{first_key}', value type: {type(first_value)}")
+                else:
+                    print(f"  Config does NOT have 'channels' key")
+            
+            # Handle special case for species - convert to IonSpecies objects if they're dictionaries
+            from .ion_species import IonSpecies
+            if 'species' in config and isinstance(config['species'], dict):
+                species_dict = config['species']
+                # Check if the values are dictionaries (need conversion) or already IonSpecies objects
+                if species_dict and isinstance(next(iter(species_dict.values())), dict):
+                    species_objects = {}
+                    for name, species_data in species_dict.items():
+                        try:
+                            # Remove display_name from species_data if it exists to avoid duplicate argument error
+                            species_data_copy = species_data.copy()
+                            species_data_copy.pop('display_name', None)
+                            species_obj = IonSpecies(display_name=name, **species_data_copy)
+                            species_objects[name] = species_obj
+                        except Exception as e:
+                            if DEBUG_LOGGING:
+                                print(f"Error creating species {name}: {str(e)}")
+                                print(f"Species data: {species_data}")
+                    config['species'] = species_objects
+            
+            # Handle special case for channels - convert to IonChannel objects if they're dictionaries
             if 'channels' in config and isinstance(config['channels'], dict):
-                # Extract and remove from config to process separately
-                channels_dict = config.pop('channels')
+                channels_dict = config['channels']
+                if DEBUG_LOGGING:
+                    print(f"  Processing channels: {len(channels_dict)} channels dict")
+                    if channels_dict:
+                        first_key = next(iter(channels_dict.keys()))
+                        first_value = channels_dict[first_key]
+                        print(f"    First channel '{first_key}' value type: {type(first_value)}, is dict: {isinstance(first_value, dict)}")
+                # Check if the values are dictionaries (need conversion) or already IonChannel objects
+                if channels_dict and isinstance(next(iter(channels_dict.values())), dict):
+                    if DEBUG_LOGGING:
+                        print(f"  Converting channels from dicts to IonChannel objects...")
+                    channels_objects = {}
+                    for name, channel_data in channels_dict.items():
+                        try:
+                            # Remove display_name from channel_data if it exists to avoid duplicate argument error
+                            channel_data_copy = channel_data.copy()
+                            channel_data_copy.pop('display_name', None)
+                            channel_obj = IonChannel(display_name=name, **channel_data_copy)
+                            channels_objects[name] = channel_obj
+                            if DEBUG_LOGGING:
+                                print(f"    Created IonChannel '{name}'")
+                        except Exception as e:
+                            if DEBUG_LOGGING:
+                                print(f"Error creating channel {name}: {str(e)}")
+                                print(f"Channel data: {channel_data}")
+                    config['channels'] = channels_objects
+                    if DEBUG_LOGGING:
+                        print(f"  Converted {len(channels_objects)} channels to IonChannel objects")
+                else:
+                    if DEBUG_LOGGING:
+                        if not channels_dict:
+                            print(f"  WARNING: channels_dict is empty!")
+                        else:
+                            print(f"  Channels are already IonChannel objects, not converting")
                 
-            # Handle special case for ion_channel_links
-            ion_channel_links = None
+            # Handle special case for ion_channel_links - convert to IonChannelsLink object if it's a dictionary
             if 'ion_channel_links' in config and isinstance(config['ion_channel_links'], dict):
-                # Extract and remove from config to avoid passing it as a direct parameter
-                ion_channel_links = config.pop('ion_channel_links')
+                links_data = config['ion_channel_links']
+                # Check if it's a raw dictionary (not already an IonChannelsLink object)
+                if not hasattr(links_data, 'add_link'):
+                    new_ion_channels_link = IonChannelsLink(use_defaults=False)
+                    
+                    # Build links from the dictionary
+                    for species_name, links in links_data.items():
+                        for channel_name, secondary_species in links:
+                            new_ion_channels_link.add_link(
+                                species_name, channel_name, secondary_species
+                            )
+                    
+                    config['ion_channel_links'] = new_ion_channels_link
                 
-            # Create the simulation without ion_channel_links and channels
+            # Now create the simulation with properly converted species, channels, and links
             new_simulation = Simulation(
                 simulations_path=self.suite_path,
                 **config
             )
-            
-            # If we have channels data, create proper IonChannel objects
-            if channels_dict is not None:
-                # Initialize empty channels dict if needed
-                if not hasattr(new_simulation, 'channels') or new_simulation.channels is None:
-                    new_simulation.channels = {}
-                
-                # Create channel objects with all necessary attributes
-                for name, channel_data in channels_dict.items():
-                    try:
-                        channel_obj = IonChannel(display_name=name, **channel_data)
-                        new_simulation.channels[name] = channel_obj
-                    except Exception as e:
-                        if DEBUG_LOGGING:
-                            print(f"Error creating channel {name}: {str(e)}")
-                            print(f"Channel data: {channel_data}")
-            
-            # If we have ion_channel_links data, create IonChannelsLink object and set it
-            if ion_channel_links is not None:
-                new_ion_channels_link = IonChannelsLink(use_defaults=False)
-                
-                # Build links from the dictionary
-                for species_name, links in ion_channel_links.items():
-                    for channel_name, secondary_species in links:
-                        new_ion_channels_link.add_link(
-                            species_name, channel_name, secondary_species
-                        )
-                
-                # Set the IonChannelsLink object on the simulation
-                new_simulation.ion_channel_links = new_ion_channels_link
         
         # Set a proper simulation index
         self._update_simulation_index(new_simulation)

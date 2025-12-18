@@ -903,6 +903,9 @@ class Simulation(Configurable, Trackable):
         
         # Deep copy channels
         config["channels"] = {}
+        from ..app_settings import DEBUG_LOGGING
+        if DEBUG_LOGGING:
+            print(f"\n=== get_config_copy: Copying {len(self.channels)} channels from {self.display_name} ===")
         for name, channel in self.channels.items():
             # Get complete channel configuration including critical attributes
             channel_config = {}
@@ -962,6 +965,11 @@ class Simulation(Configurable, Trackable):
                     channel_config[attr] = getattr(channel, attr)
             
             config["channels"][name] = channel_config
+            if DEBUG_LOGGING:
+                print(f"  Copied channel '{name}': {len(channel_config)} attributes")
+        
+        if DEBUG_LOGGING:
+            print(f"=== Total channels in config: {len(config['channels'])} ===\n")
         
         # Copy ion-channel links
         if hasattr(self.ion_channel_links, 'get_links_copy'):
