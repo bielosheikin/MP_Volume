@@ -135,6 +135,10 @@ class ChannelsTab(QWidget):
         """Add default channels with correct ions from the default_channels configuration"""
         # Add default channels as a starting point
         links = IonChannelsLink(use_defaults=True).get_links()
+        
+        # Track coupled channels to add after their master channels
+        coupled_channels_to_add = []
+        
         for ion_name, channel_list in links.items():
             # Skip if the ion is not in our available species
             if ion_name not in self.available_ion_species:
@@ -153,13 +157,28 @@ class ChannelsTab(QWidget):
                 # Extract only the configuration parameters we need for the UI
                 parameters = self.extract_config_parameters(channel_config)
                 
-                # CRITICAL: Only add non-coupled channels as regular channels
-                # Coupled channels should only be created via the "Create Coupled Channel" button
-                if not parameters.get('is_coupled_channel', False):
+                # Check if this is a coupled channel
+                if parameters.get('is_coupled_channel', False):
+                    # Store for later addition (after master channels are added)
+                    coupled_channels_to_add.append((channel_name, ion_name, secondary_ion, parameters))
+                    if DEBUG_LOGGING:
+                        print(f"Queuing coupled channel '{channel_name}' for addition after master channel")
+                else:
+                    # Add master/independent channels first
                     self.channel_parameters[channel_name] = parameters
                     self.add_channel_row(channel_name, ion_name, secondary_ion, parameters)
-                elif DEBUG_LOGGING:
-                    print(f"Skipping coupled channel '{channel_name}' from default channel list")
+                    
+                    # Check if this master channel has coupled channels to add
+                    if parameters.get('coupled_channels'):
+                        if DEBUG_LOGGING:
+                            print(f"Master channel '{channel_name}' has coupled channels: {parameters['coupled_channels']}")
+        
+        # Now add all coupled channels after their master channels have been added
+        for channel_name, ion_name, secondary_ion, parameters in coupled_channels_to_add:
+            self.channel_parameters[channel_name] = parameters
+            self.add_channel_row(channel_name, ion_name, secondary_ion, parameters)
+            if DEBUG_LOGGING:
+                print(f"Added coupled channel '{channel_name}' linked to master '{parameters.get('master_channel_name')}'")
 
     def extract_config_parameters(self, channel):
         """Extract only the configuration parameters from a channel object."""
