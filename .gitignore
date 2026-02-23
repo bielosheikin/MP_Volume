@@ -2,41 +2,79 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
 
 # Distribution / packaging
 dist/
 build/
 *.egg-info/
+.eggs/
 
-# Built binaries
-MP_Volume_Simulator_*.exe
+# Built binaries and executables
+MP_Volume_Simulator*.exe
+MP_Volume.exe
+*.exe
 *.spec.backup
 
 # Virtual environment
 venv/
+venv_dev/
 env/
 .env/
 .venv/
+ENV/
 
 # IDE specific files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.swn
+*~
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
 
 # Local development settings
 .env
-.env.local 
+.env.local
 
-# Data files
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Simulation data files (user-generated)
+simulation_suites/
 *.npy
-*.json
-*.pickle
-**/simulation_suites/**
-
-# Test files
-**/tests/**
-
-# Simulation files and results
+histories.npz
 **/histories/
 **/simulation_data/
+
+# Configuration backups (keep templates only)
+*.json.backup
+config_*.json
+
+# Test output and temporary files
+*.log
+*.tmp
+*.temp
+test_output/
+comparison_*.png
+legacy_vs_current_*.png
+
+# PyInstaller specific
+*.manifest
+*.spec.backup
+
+# Coverage and testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Documentation build artifacts
+docs/_build/
+docs/.doctrees/
