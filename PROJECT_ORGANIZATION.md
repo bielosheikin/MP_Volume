@@ -23,7 +23,6 @@ MP_Volume/
 ├── build_exe.ps1              # PowerShell build script (ACTIVE)
 │
 ├── src/                       # Source code
-├── tests/                     # Test files
 ├── legacy/                    # Original command-line version
 ├── docs/                      # Additional documentation
 ├── archive/                   # Obsolete/deprecated files
@@ -155,15 +154,6 @@ src/
     ├── __init__.py
     ├── configurable.py         # Base configuration class
     └── config.py               # Configuration utilities
-```
-
-## 🧪 Tests (tests/)
-
-```
-tests/
-├── simulation_test_final.ipynb  # Comprehensive simulation tests
-├── test_simulation.py           # Unit tests (if exists)
-└── test_data/                   # Test fixtures
 ```
 
 ## 📜 Legacy Code (legacy/)

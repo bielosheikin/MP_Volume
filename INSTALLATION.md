@@ -20,8 +20,15 @@ Complete installation instructions for all user types and platforms.
 
 ### Windows
 
-#### Step 1: Download
-- Get `MP_Volume_Simulator_V3.x.exe` from releases or distribution
+#### Step 1: Get the Executable
+
+**Option A - Request Pre-Built:**
+- Contact the project maintainer for the pre-built `MP_Volume.exe` file
+- Typically shared via email, shared drive, or direct transfer
+
+**Option B - Build It Yourself:**
+- Follow the instructions in [BUILD_INSTRUCTIONS.md](../BUILD_INSTRUCTIONS.md)
+- Takes ~5-10 minutes on first build
 
 #### Step 2: Security Check
 **If Windows Defender SmartScreen appears:**

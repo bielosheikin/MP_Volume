@@ -52,7 +52,9 @@ This tool is the companion software for the publication:
 ### For End Users (Standalone Executable)
 
 **Windows Users:**
-1. Download `MP_Volume_Simulator_V3.x.exe` from the releases
+1. Get the executable:
+   - **Option A**: Request the pre-built `MP_Volume.exe` from the project maintainer
+   - **Option B**: Build it yourself following [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md)
 2. Double-click to run - no installation required!
 3. Create a new suite and start simulating
 
@@ -287,8 +289,7 @@ MP_Volume/
 │           └── histories.npz      # Time-series results
 │
 ├── dist/                          # Built executables (after building)
-├── build/                         # Build artifacts (after building)
-└── tests/                         # Test files and notebooks
+└── build/                         # Build artifacts (after building)
 ```
 
 ## 🔧 Configuration & Settings
@@ -386,19 +387,7 @@ Where:
 - **Ideal Gas Constant**: R = 8.314 J/(mol·K)
 - **Membrane Capacitance**: 0.01 F/m² (typical biological membrane)
 
-## 🧪 Testing
-
-### Running Tests
-
-```bash
-# Run simulation tests
-python tests/test_simulation.py
-
-# Run Jupyter notebooks for interactive testing
-jupyter notebook tests/simulation_test_final.ipynb
-```
-
-### Validation
+## 🧪 Testing & Validation
 
 The current implementation has been validated against the legacy version:
 - Results match within numerical precision
