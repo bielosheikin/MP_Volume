@@ -499,7 +499,7 @@ Please cite this publication if you use this software in your research.
 - Thomas J. Jentsch
 
 **GUI Application Development:**
-- [Current development team]
+- Daniil Bielosheikin, [Current development team]
 
 ### Citation
 
@@ -550,25 +550,6 @@ Zeziulia, M., Blin, S., Schmitt, F.W., Lehmann, M., & Jentsch, T.J.
 - IPython/Jupyter notebook integration
 - Basic matplotlib plotting
 - Parameter input via keyboard or arguments
-
-## 🎯 Roadmap
-
-### Planned Features
-- [ ] Parameter sensitivity analysis tools
-- [ ] Batch simulation with parameter ranges
-- [ ] Advanced plotting templates
-- [ ] 3D visualization of results
-- [ ] Import/export parameter sets
-- [ ] Undo/redo for parameter changes
-- [ ] Real-time simulation preview
-- [ ] Multi-language support
-- [ ] Cloud storage integration
-
-### Performance Improvements
-- [ ] C++ backend integration (cpp_backend directory)
-- [ ] Parallel simulation execution
-- [ ] GPU acceleration for large simulations
-- [ ] Optimized history storage formats
 
 ## 🙏 Acknowledgments
 
