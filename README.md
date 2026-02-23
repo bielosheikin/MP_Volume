@@ -287,8 +287,7 @@ MP_Volume/
 │           └── histories.npz      # Time-series results
 │
 ├── dist/                          # Built executables (after building)
-├── build/                         # Build artifacts (after building)
-└── tests/                         # Test files and notebooks
+└── build/                         # Build artifacts (after building)
 ```
 
 ## 🔧 Configuration & Settings
@@ -386,19 +385,7 @@ Where:
 - **Ideal Gas Constant**: R = 8.314 J/(mol·K)
 - **Membrane Capacitance**: 0.01 F/m² (typical biological membrane)
 
-## 🧪 Testing
-
-### Running Tests
-
-```bash
-# Run simulation tests
-python tests/test_simulation.py
-
-# Run Jupyter notebooks for interactive testing
-jupyter notebook tests/simulation_test_final.ipynb
-```
-
-### Validation
+## 🧪 Testing & Validation
 
 The current implementation has been validated against the legacy version:
 - Results match within numerical precision
