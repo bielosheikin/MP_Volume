@@ -52,7 +52,9 @@ This tool is the companion software for the publication:
 ### For End Users (Standalone Executable)
 
 **Windows Users:**
-1. Download the latest `MP_Volume_Simulator_V3.x.exe` from the distribution or build it yourself (see [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md))
+1. Get the executable:
+   - **Option A**: Request the pre-built `MP_Volume.exe` from the project maintainer
+   - **Option B**: Build it yourself following [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md)
 2. Double-click to run - no installation required!
 3. Create a new suite and start simulating
 
