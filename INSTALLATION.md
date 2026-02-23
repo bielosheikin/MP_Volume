@@ -21,7 +21,7 @@ Complete installation instructions for all user types and platforms.
 ### Windows
 
 #### Step 1: Download
-- Get `MP_Volume_Simulator_V3.x.exe` from releases or distribution
+- Get the latest `MP_Volume_Simulator_V3.x.exe` from your distribution source or build it yourself
 
 #### Step 2: Security Check
 **If Windows Defender SmartScreen appears:**
