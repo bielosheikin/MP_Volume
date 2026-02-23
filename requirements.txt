@@ -1,24 +1,146 @@
-# Core dependencies
-matplotlib==3.8.4
-numpy==1.26.4
+# ============================================================================
+# MP_Volume - Membrane Potential and Volume Simulator
+# Requirements File
+# ============================================================================
+# 
+# This file specifies all Python dependencies required to run the MP_Volume
+# application from source or build standalone executables.
+#
+# Installation:
+#   pip install -r requirements.txt
+#
+# For development in a virtual environment:
+#   python -m venv venv
+#   source venv/bin/activate  (macOS/Linux)
+#   venv\Scripts\activate     (Windows)
+#   pip install -r requirements.txt
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Core Application Dependencies
+# ----------------------------------------------------------------------------
+
+# PyQt5 - GUI Framework
+# Used for: Main application interface, all windows, dialogs, and widgets
 PyQt5==5.15.11
 PyQt5-Qt5>=5.15.2
 PyQt5_sip>=12.13.0
 
-# Build tools
+# NumPy - Numerical Computing
+# Used for: Array operations, mathematical functions, data storage
+numpy==1.26.4
+
+# Matplotlib - Plotting Library
+# Used for: All graphs, charts, and data visualization
+matplotlib==3.8.4
+
+# ----------------------------------------------------------------------------
+# Matplotlib Dependencies (automatically installed with matplotlib)
+# ----------------------------------------------------------------------------
+
+# Matplotlib core dependencies
+cycler==0.12.1              # Color cycle management
+fonttools==4.53.1           # Font handling
+kiwisolver==1.4.5           # Layout constraint solver
+packaging==24.0             # Version parsing
+pillow==10.4.0              # Image processing and export
+pyparsing==3.1.2            # Mathematical expression parsing
+python-dateutil==2.8.2      # Date/time handling for plots
+six==1.16.0                 # Python 2/3 compatibility utilities
+
+# ----------------------------------------------------------------------------
+# Build & Distribution Tools
+# ----------------------------------------------------------------------------
+
+# PyInstaller - Executable Builder
+# Used for: Creating standalone executables for Windows/Linux/macOS
 pyinstaller>=6.0.0
 
-# Utilities
-cycler==0.12.1
-fonttools==4.53.1
-kiwisolver==1.4.5
-packaging==24.0
-pillow==10.4.0
-pyparsing==3.1.2
-python-dateutil==2.8.2
+# Setuptools - Package management
+# Used for: Installation and distribution
 setuptools>=69.0.0
-six==1.16.0
 
-# Windows-specific dependencies for better compatibility
+# ----------------------------------------------------------------------------
+# Platform-Specific Dependencies
+# ----------------------------------------------------------------------------
+
+# Windows-specific: Enhanced Windows integration
+# Used for: Better Windows API access, registry operations, COM interfaces
 pywin32>=306; platform_system == "Windows"
+
+# Note: win32-setctime is not required for current version
+# Uncomment if needed for file timestamp manipulation on Windows:
 # win32-setctime==1.1.0; platform_system == "Windows"
+
+# ----------------------------------------------------------------------------
+# Optional Development Dependencies (not required for basic usage)
+# ----------------------------------------------------------------------------
+
+# Uncomment these if you need them for development:
+
+# IPython - Enhanced interactive Python shell
+# ipython>=8.0.0
+
+# Jupyter - Notebook interface for interactive development
+# jupyter>=1.0.0
+# notebook>=7.0.0
+
+# Testing frameworks
+# pytest>=7.0.0
+# pytest-qt>=4.0.0
+
+# Code quality tools
+# black>=23.0.0         # Code formatter
+# flake8>=6.0.0         # Linter
+# mypy>=1.0.0           # Type checker
+
+# ----------------------------------------------------------------------------
+# Version Compatibility Notes
+# ----------------------------------------------------------------------------
+#
+# Python Version: 3.8 or later required (tested with 3.12)
+#
+# Key version pins:
+# - PyQt5 5.15.11: Last stable version with Qt 5.15 support
+# - NumPy 1.26.4: Compatible with Python 3.12
+# - Matplotlib 3.8.4: Matches NumPy compatibility
+#
+# Breaking changes to watch:
+# - NumPy 2.0+ has API changes; current code uses 1.26.x
+# - PyQt6 is a major rewrite; migration would require GUI updates
+# - Matplotlib 3.9+ may have new default styles
+#
+# ----------------------------------------------------------------------------
+# Installation Troubleshooting
+# ----------------------------------------------------------------------------
+#
+# Issue: PyQt5 installation fails
+# Solution: Install Qt5 system libraries first or use binary wheel
+#   - Windows: Should work automatically with pip
+#   - Linux: sudo apt-get install python3-pyqt5
+#   - macOS: brew install pyqt5
+#
+# Issue: NumPy installation fails on Apple Silicon
+# Solution: Use conda or ensure Xcode command line tools installed
+#   - conda install numpy
+#   - xcode-select --install
+#
+# Issue: PyInstaller executable doesn't run
+# Solution: Check antivirus settings, try building with --debug flag
+#
+# Issue: Matplotlib backend errors
+# Solution: Set backend explicitly in code or use TkAgg/Qt5Agg
+#
+# ----------------------------------------------------------------------------
+# Building Executables
+# ----------------------------------------------------------------------------
+#
+# After installing requirements, build with:
+#   Windows: build_exe.bat
+#   Linux/Mac: ./build_exe.sh
+#   Manual: pyinstaller MP_Volume.spec --clean
+#
+# Expected build size: ~70 MB (single file executable)
+# Build time: 5-10 minutes on first build
+#
+# ============================================================================
